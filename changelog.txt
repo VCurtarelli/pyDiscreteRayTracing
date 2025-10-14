@@ -1,3 +1,8 @@
 v1.0.251014:
 	Working appropriately.
 	Need to implement multi-source.
+v1.1.251014:
+	Changed to OOP-based structure.
+	Now supports multiple sources.
+	Better factored.
+	Need to implement rank-defficiency exploit in D V2.

@@ -2,7 +2,13 @@ import numpy as np
 from numpy import pi
 
 
-def calc_grad(velocity_field, cell, prev_cell, pos_a_x, pos_a_y, cell_width, cell_height, num_cells_x, num_cells_y):
+def calc_grad(vf, cell, prev_cell, pos_a_x, pos_a_y):
+    num_cells_x = vf.cells_nx
+    num_cells_y = vf.cells_ny
+    cell_height = vf.cell_height
+    cell_width = vf.cell_width
+    field = vf.field
+
     cell_y = cell[0]
     cell_x = cell[1]
     cell_y_ = prev_cell[0]
@@ -17,31 +23,31 @@ def calc_grad(velocity_field, cell, prev_cell, pos_a_x, pos_a_y, cell_width, cel
         grad_y = 0
         case += 'p'
     elif cell_x == cell_x_:
-        grad_x = (velocity_field[cell_y, cell_x] - velocity_field[cell_y_, cell_x])
-        a = (pos_a_y/cell_height) % 1
-        b = 1-a
+        grad_x = (field[cell_y, cell_x] - field[cell_y_, cell_x])
         case += 'H'
         if cell_u == cell_x:
-            grad_y = (velocity_field[cell_y, cell_x] - velocity_field[cell_d, cell_x])
+            grad_y = (field[cell_y, cell_x] - field[cell_d, cell_x])
             case += 'd'
         elif cell_d == cell_x:
-            grad_y = (velocity_field[cell_u, cell_x] - velocity_field[cell_y, cell_x])
+            grad_y = (field[cell_u, cell_x] - field[cell_y, cell_x])
             case += 'u'
         else:
-            grad_y = (a * velocity_field[cell_u, cell_x] + (b-a) * velocity_field[cell_y, cell_x] - b * velocity_field[cell_d, cell_x]) / 2
+            a = (pos_a_y/cell_height) % 1
+            b = 1-a
+            grad_y = (a * field[cell_u, cell_x] + (b-a) * field[cell_y, cell_x] - b * field[cell_d, cell_x]) / 2
             case += 'v'
     else:
-        grad_y = (velocity_field[cell_y,cell_x] - velocity_field[cell_y,cell_x_])
-        a = (pos_a_x/cell_width) % 1
-        b = 1-a
+        grad_y = (field[cell_y,cell_x] - field[cell_y,cell_x_])
         if cell_r == cell_x:
-            grad_x = (velocity_field[cell_y, cell_x] - velocity_field[cell_y, cell_l])
+            grad_x = (field[cell_y, cell_x] - field[cell_y, cell_l])
             case += 'l'
         elif cell_l == cell_x:
-            grad_x = (velocity_field[cell_y, cell_r] - velocity_field[cell_y, cell_x])
+            grad_x = (field[cell_y, cell_r] - field[cell_y, cell_x])
             case += 'r'
         else:
-            grad_x = (a * velocity_field[cell_y, cell_r] + (b-a) * velocity_field[cell_y, cell_x] - b * velocity_field[cell_y, cell_l]) / 2
+            a = (pos_a_x/cell_width) % 1
+            b = 1-a
+            grad_x = (a * field[cell_y, cell_r] + (b-a) * field[cell_y, cell_x] - b * field[cell_y, cell_l]) / 2
             case += 'h'
         case += 'V'
     if np.abs(grad_x) < 1e-6 and np.abs(grad_y) < 1e-6:

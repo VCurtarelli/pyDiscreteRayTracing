@@ -1,11 +1,17 @@
 import numpy as np
 
 from py_libs import *
-from py_params import *
 from fun_calc_grad import calc_grad
 
 
-def ray_tracing(theta_0, velocity_field, num_cells_x, num_cells_y, width, height, pos_source=(0, 0)):
+def ray_tracing(vf, ray):
+    pos_source = ray.source
+    theta_0 = ray.angle
+    width = vf.width
+    height = vf.height
+    num_cells_x = vf.cells_nx
+    num_cells_y = vf.cells_ny
+    field = vf.field
     thetas = []
     lengths = []
     positions = []
@@ -30,9 +36,9 @@ def ray_tracing(theta_0, velocity_field, num_cells_x, num_cells_y, width, height
         # print(idx_x_, idx_y_)
         # print()
         # print(velocity_field.shape)
-        Va = velocity_field[idx_y, idx_x]
-        Vb = velocity_field[idx_y_, idx_x_]
-        mag_grad_V, direc_grad_V = calc_grad(velocity_field, cells[-1], cells[-2], pos_a_x, pos_a_y, cell_width, cell_height, num_cells_x, num_cells_y)
+        Va = field[idx_y, idx_x]
+        Vb = field[idx_y_, idx_x_]
+        mag_grad_V, direc_grad_V = calc_grad(vf, cells[-1], cells[-2], pos_a_x, pos_a_y)
         # print(np.rad2deg(direc_grad_V), mag_grad_V)
         # gradient_factor = 0
         discrete_gradient = 100*mag_grad_V

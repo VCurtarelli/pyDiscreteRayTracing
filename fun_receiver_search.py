@@ -2,18 +2,26 @@ from py_libs import *
 from fun_ray_tracing import ray_tracing
 
 
-def receiver_search(theta_0, velocity_field, num_cells_x, num_cells_y, width, height, pos_source, pos_receiver,
+def receiver_search(vf, ray,
                     stop_param=0.005, iteration_step=0.05, iterations_max=100):
+    theta_0 = ray.angle
+    pos_source = ray.source
+    pos_receiver = ray.receiver
     angles = [theta_0]
     paths = []
     pos_receiver = np.array(pos_receiver)
+    field = vf.field
+    num_cells_x = vf.cells_nx
+    num_cells_y = vf.cells_ny
+    width = vf.width
+    height = vf.height
 
     best_theta = 0
     best_ang_dist = np.inf
     best_path = None
     while True:
         theta = angles[-1]
-        _, _, positions, _ = ray_tracing(theta, velocity_field, num_cells_x, num_cells_y, width, height, pos_source)
+        _, _, positions, _ = ray_tracing(theta, field, num_cells_x, num_cells_y, width, height, pos_source)
         position = np.array(positions[-1])
         lin_dist = float(np.linalg.norm((position - pos_receiver) * np.array([1/width, 1/height]) * np.sqrt(2)))
         ang_dist = np.angle((position.T @ np.array([1, 1j])).item()) - np.angle((pos_receiver.T @ np.array([1, 1j])).item())
@@ -32,7 +40,9 @@ def receiver_search(theta_0, velocity_field, num_cells_x, num_cells_y, width, he
             iteration_step *= 0.9
         angles.append(new_theta)
         paths.append(positions)
-    if angles[-1] != best_theta:
-        angles.append(best_theta)
-        paths.append(best_path)
+
+    angles.append(best_theta)
+    paths.append(best_path)
+    ray.angle = best_theta
+    ray.path = best_path
     return angles, paths
