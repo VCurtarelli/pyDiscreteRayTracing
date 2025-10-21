@@ -1,10 +1,13 @@
 from py_libs import *
 from py_params import *
 from fun_receiver_search import receiver_search
-
+from class_Ray import Ray
 
 ## --------------------
 # RECEIVER SEARCH
+rays = []
+for angle in np.linspace(0, np.pi/2, num=100):
+    rays.append(Ray, )
 pos_receiver = (width, height)  # position of receiver
 theta_0 = np.angle(complex(pos_receiver[0],pos_receiver[1]))    # initial guess for source-to-receiver ray's emission angle
 angles, paths = receiver_search(theta_0, velocity_field, num_cells_x, num_cells_y, width, height, pos_source, pos_receiver, iterations_max=1000)

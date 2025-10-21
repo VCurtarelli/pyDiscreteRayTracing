@@ -6,3 +6,8 @@ v1.1.251014:
 	Now supports multiple sources.
 	Better factored.
 	Need to implement rank-defficiency exploit in D V2.
+v1.1.251021:
+	Many changes.
+	Implemented both proposed and literature technique.
+	Now using bicubic interp for estimating velocity.
+	Many refactorizations and changes in structure.

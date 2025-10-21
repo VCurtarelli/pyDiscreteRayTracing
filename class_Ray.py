@@ -1,9 +1,12 @@
+import scipy.interpolate
+
 from py_libs import *
 from fun_receiver_search import receiver_search
+from fun_calc_dist import calc_dist, calc_closest_point
 
 
 class Ray:
-    def __init__(self, source, receiver, color=(0, 180, 0)):
+    def __init__(self, source, receiver, ray_type, color=(0, 180, 0)):
         self.source = source
         self.receiver = receiver
         self.path = None
@@ -13,14 +16,16 @@ class Ray:
         self.thetas = None
         self.lengths = None
         self.color = np.array(color)/255
-        self.converged = True
+        self.converged = False
         self.paths = None
+        self.ray_type = ray_type
 
-    def calc_path(self, velocity_field, stop_param=0.005, iteration_step=0.1, iterations_max=50):
+    def calc_path(self, velocity_field, stop_param=0.015, iteration_step=0.1, iterations_max=100):
         self.angle = np.angle((np.array(self.receiver) - np.array(self.source)) @ np.array([1, 1j]).T)
 
         theta_0 = self.angle
         pos_receiver = self.receiver
+        pos_source = self.source
         angles = [theta_0]
         paths = []
         pos_receiver = np.array(pos_receiver)
@@ -32,10 +37,9 @@ class Ray:
         best_path = None
         while True:
             theta = angles[-1]
-            _, _, positions, _ = self.ray_tracing(velocity_field)
-            position = np.array(positions[-1])
-            lin_dist = float(np.linalg.norm((position - pos_receiver) * np.array([1/width, 1/height]) * np.sqrt(2)))
-            ang_dist = np.angle((position.T @ np.array([1, 1j])).item()) - np.angle((pos_receiver.T @ np.array([1, 1j])).item())
+            _, _, positions, cells = self.ray_tracing(velocity_field)
+            lin_dist, ang_dist = calc_dist(pos_receiver, pos_source, positions)
+            lin_dist /= np.sqrt(width**2 + height**2) / 2
             if np.abs(ang_dist) < np.abs(best_ang_dist):
                 best_ang_dist = ang_dist
                 best_theta = theta
@@ -43,31 +47,38 @@ class Ray:
             if lin_dist < stop_param:
                 # print("Solution found: {} iterations - {:.2f} / {:.2f}".format(len(angles), lin_dist, stop_param))
                 self.converged = True
+                if (int(pos_receiver[1]//velocity_field.cell_height), int(pos_receiver[0]//velocity_field.cell_width)) in cells:
+                    stop = cells.index((int(pos_receiver[1]//velocity_field.cell_height), int(pos_receiver[0]//velocity_field.cell_width)))
+                    best_path = cells[:stop]
                 break
             new_theta = (theta - iteration_step * lin_dist * np.sign(ang_dist)).item()
             if len(angles) == iterations_max:
                 # print("Iteration forced break achieved: {} iterations - {:.2f} / {:.2f}".format(len(angles), lin_dist, stop_param))
                 self.converged = False
                 break
-            if len(angles) % 100 == 0:
-                iteration_step *= 0.8
+            if len(angles) % 10 == 0:
+                iteration_step *= 2/3
             angles.append(new_theta)
             paths.append(positions)
             self.angle = new_theta
 
         angles.append(best_theta)
         paths.append(best_path)
+
+
         self.angle = best_theta
         self.paths = paths
         return angles, paths
 
     def calc_time(self, velocity_field):
         field = velocity_field.field
-
-        thetas, lengths, positions, cells = self.ray_tracing(velocity_field)
+        if not self.converged:
+            self.time = 0
+            return 0, np.array([])
         Lengths = np.zeros_like(field)
-        for jdx, cell in enumerate(cells):
-            Lengths[cell[0], cell[1]] = lengths[jdx]
+        for jdx, cell in enumerate(self.cells):
+            Lengths[cell[0], cell[1]] = self.lengths[jdx]
+
         time = (Lengths.reshape(-1, 1).T @ (1 / field.reshape(-1, 1))).item()
         self.time = time
         Lengths = Lengths.reshape(-1,1)
@@ -75,6 +86,7 @@ class Ray:
 
     def ray_tracing(self, velocity_field):
         pos_source = self.source
+
         theta_0 = self.angle
         width = velocity_field.width
         height = velocity_field.height
@@ -98,18 +110,10 @@ class Ray:
         while True:
             pos_a_x, pos_a_y = positions[-1]  # crossing position from cell a (previous cell) to cell b (current cell)
             idx_y, idx_x = cells[-1]
-            idx_y_, idx_x_ = cells[-2]
-            if not (0 <= idx_x < num_cells_x and 0 <= idx_y < num_cells_y):
-                break
-            Va = field[idx_y, idx_x]
-            Vb = field[idx_y_, idx_x_]
-            mag_grad_V, direc_grad_V = self.calc_grad(velocity_field, cells[-1], cells[-2], pos_a_x, pos_a_y)
-            discrete_gradient = 100*mag_grad_V
-            gradient_factor = 1/(1+np.exp(-discrete_gradient))
-            Va, Vb = gradient_factor*Va+(1-gradient_factor)*Vb, (1-gradient_factor)*Va + gradient_factor*Vb
-    
-            phi = direc_grad_V  #TODO: IF GRADIENT OF VELOCITY AND RAY DIRECTIONS ARE REVERTED, CANCEL IT
             theta = thetas[-1]
+            mag_grad_V, direc_grad_V, Va, Vb = self.calc_grad(velocity_field, pos_a_x, pos_a_y, theta)
+
+            phi = direc_grad_V  #TODO: IF GRADIENT OF VELOCITY AND RAY DIRECTIONS ARE REVERTED, CANCEL IT
             if np.cos(theta-phi) < 0:
                 phi = (phi+pi+2*pi) % (2*pi)
             alpha = theta - phi
@@ -125,13 +129,13 @@ class Ray:
             theta_b = (gamma+2*pi) % (2*pi)
             sin_theta_b = np.sin(theta_b)
             cos_theta_b = np.cos(theta_b)
-    
-            x0 = (idx_x-1)*cell_width
-            x1 = (idx_x+1)*cell_width
-            y0 = (idx_y-1)*cell_height
-            y1 = (idx_y+1)*cell_height
+            epsilon = 1e-6
             px = pos_a_x
             py = pos_a_y
+            x0 = cell_width * np.floor(px/cell_width + epsilon)
+            x1 = cell_width * np.ceil(px/cell_width + epsilon)
+            y0 = cell_height * np.floor(py/cell_height + epsilon)
+            y1 = cell_height * np.ceil(py/cell_height + epsilon)
     
             if sin_theta_b == 0:
                 t_T = np.inf
@@ -147,9 +151,10 @@ class Ray:
                 t_L = (x0 - px) / cos_theta_b
             ts = [t_T, t_B, t_R, t_L]
             for i in range(len(ts)):
-                if ts[i] < 0:
+                if ts[i] <= 0:
                     ts[i] = np.inf
             t_min_idx = np.argmin(ts)
+
             t = ts[t_min_idx]
             if t_min_idx == 0:
                 idx_y += 1
@@ -161,79 +166,89 @@ class Ray:
                 idx_x -= 1
             pos_b_x = px + t*cos_theta_b
             pos_b_y = py + t*sin_theta_b
-    
-            if not ((0 <= pos_b_x <= width)
-                and (0 <= pos_b_y <= height)):
-                break
-            travel_dist = np.sqrt((pos_b_x - pos_a_x) ** 2 + (pos_b_y - pos_a_y) ** 2)
+
             thetas.append(float(theta_b))
-            lengths.append(travel_dist)
             positions.append((pos_b_x, pos_b_y))
             cells.append((idx_y, idx_x))
+            if (not 0<=pos_b_x<=width) or (not 0<=pos_b_y<=height):
+                break
     
             if sin_theta_b > 1 or np.isnan(sin_theta_b):
                 break
-    
-        cells = cells[1:-1]
-        thetas = thetas[:-1]
+
+        cells = cells[1:]
+
+        new_cells = []
+        new_thetas = []
+        new_positions = []
+        for idx, position in enumerate(positions):
+            if idx == 0:
+                new_positions.append(position)
+                continue
+            pos_x, pos_y = position
+            pos, c0, c1, t = calc_closest_point(self.receiver, positions[:idx+1], return_params=True)
+            if 0 <= t <= 1 or idx == len(positions)-1:
+                pos = tuple(pos.reshape(-1,))
+            else:
+                pos = position
+            new_positions.append(pos)
+            new_cells.append(cells[idx-1])
+            new_thetas.append(thetas[idx-1])
+
+            if 0 <= t <= 1:
+                break
+            if (not 0 <= pos_x <= width) or (not 0 <= pos_y <= height):
+                break
+            if (not 0 <= cells[idx][0] < num_cells_y) or (not 0 <= cells[idx][1] < num_cells_x):
+                break
+
+        cells = new_cells
+        thetas = new_thetas
+        positions = new_positions
+        lengths = [norm(np.array(positions[i]) - np.array(positions[i-1])) for i in range(1, len(positions))]
         self.thetas = thetas
         self.cells = cells
         self.lengths = lengths
         self.path = positions
         return thetas,lengths,positions,cells
 
-    def calc_grad(self, vf, cell, prev_cell, pos_a_x, pos_a_y):
+    def calc_grad(self, vf, pos_a_x, pos_a_y, angle):
         num_cells_x = vf.cells_nx
         num_cells_y = vf.cells_ny
-        cell_height = vf.cell_height
         cell_width = vf.cell_width
+        cell_height = vf.cell_height
         field = vf.field
+        x_interp = cell_width*(0.5 + np.arange(num_cells_x))
+        y_interp = cell_height*(0.5 + np.arange(num_cells_y))
+        interp = scipy.interpolate.RegularGridInterpolator((y_interp, x_interp), field, method='cubic')
+        x_p = np.clip(pos_a_x, x_interp[0], x_interp[-1])
+        y_p = np.clip(pos_a_y, y_interp[0], y_interp[-1])
+        x_l = np.clip(x_p - 0.01*cell_width, x_interp[0], x_interp[-1])
+        x_r = np.clip(x_p + 0.01*cell_width, x_interp[0], x_interp[-1])
+        y_u = np.clip(y_p - 0.01*cell_height, y_interp[0], y_interp[-1])
+        y_d = np.clip(y_p + 0.01*cell_height, y_interp[0], y_interp[-1])
+        positions = np.array([[y_p, x_r],
+                              [y_p, x_l],
+                              [y_u, x_p],
+                              [y_d, x_p]])
+        try:
+            vels = interp(positions)
+        except ValueError:
+            vels = np.zeros(positions.shape[0])
+        grad_x = ((vels[0] - vels[1]) / norm(positions[0] - positions[1])).item()
+        grad_y = ((vels[2] - vels[3]) / norm(positions[2] - positions[3])).item()
+        dir_grad = (float(np.angle(grad_x + 1j * grad_y)) + 2 * pi) % (2 * pi)
+        mag_grad = 0.3*np.sqrt(grad_x ** 2 + grad_y ** 2)
 
-        cell_y = cell[0]
-        cell_x = cell[1]
-        cell_y_ = prev_cell[0]
-        cell_x_ = prev_cell[1]
-        cell_l = np.clip(cell_x-1, 0, num_cells_x-1)
-        cell_r = np.clip(cell_x+1, 0, num_cells_x-1)
-        cell_d = np.clip(cell_y-1, 0, num_cells_y-1)
-        cell_u = np.clip(cell_y+1, 0, num_cells_y-1)
-        case = ''
-        if cell == prev_cell:
-            grad_x = 1
-            grad_y = 0
-            case += 'p'
-        elif cell_x == cell_x_:
-            grad_x = (field[cell_y, cell_x] - field[cell_y_, cell_x])
-            a = (pos_a_y/cell_height) % 1
-            b = 1-a
-            case += 'H'
-            if cell_u == cell_x:
-                grad_y = (field[cell_y, cell_x] - field[cell_d, cell_x])
-                case += 'd'
-            elif cell_d == cell_x:
-                grad_y = (field[cell_u, cell_x] - field[cell_y, cell_x])
-                case += 'u'
-            else:
-                grad_y = (a * field[cell_u, cell_x] + (b-a) * field[cell_y, cell_x] - b * field[cell_d, cell_x]) / 2
-                case += 'v'
-        else:
-            grad_y = (field[cell_y,cell_x] - field[cell_y,cell_x_])
-            a = (pos_a_x/cell_width) % 1
-            b = 1-a
-            if cell_r == cell_x:
-                grad_x = (field[cell_y, cell_x] - field[cell_y, cell_l])
-                case += 'l'
-            elif cell_l == cell_x:
-                grad_x = (field[cell_y, cell_r] - field[cell_y, cell_x])
-                case += 'r'
-            else:
-                grad_x = (a * field[cell_y, cell_r] + (b-a) * field[cell_y, cell_x] - b * field[cell_y, cell_l]) / 2
-                case += 'h'
-            case += 'V'
-        if np.abs(grad_x) < 1e-6 and np.abs(grad_y) < 1e-6:
-            dir_grad = 0
-            mag_grad = 0
-        else:
-            dir_grad = (np.angle(grad_x + 1j*grad_y)+2*pi)%(2*pi)
-            mag_grad = np.sqrt(grad_x**2 + grad_y**2)
-        return mag_grad, dir_grad
+        dx_a = np.clip(x_p - mag_grad*np.cos(angle)*cell_width, x_interp[0], x_interp[-1])
+        dx_b = np.clip(x_p + mag_grad*np.cos(angle)*cell_width, x_interp[0], x_interp[-1])
+        dy_a = np.clip(y_p - mag_grad*np.sin(angle)*cell_height, y_interp[0], y_interp[-1])
+        dy_b = np.clip(y_p + mag_grad*np.sin(angle)*cell_height, y_interp[0], y_interp[-1])
+        positions = np.array([[dy_a, dx_a],
+                              [dy_b, dx_b]])
+
+        vels = interp(positions)
+        Va = vels[0].item()
+        Vb = vels[1].item()
+
+        return mag_grad, dir_grad, Va, Vb
