@@ -40,9 +40,9 @@ class Environment:
                 fY = np.exp((0.748 * Y / height) ** 2) - 0.748 * Y / height  # model for velocity variation on y-axis
                 # fY = fY - np.amin(fY)
                 # fY = fY / np.amax(fY)
-                print(np.amin(fY))
-                print(np.amax(fY))
-                input()
+                # print(np.amin(fY))
+                # print(np.amax(fY))
+                # input()
                 vY = 100*(1 - fY)
                 velocity_field = 1500 + vY + vX  # velocity field
             case 'circle':
@@ -111,28 +111,45 @@ class Environment:
         if legend:
             ax.legend(loc='upper left')
 
-    def field_to_csv(self, idx, direc='Results/', export_params=False):
+    def field_to_csv(self, idx, direc='Results/', export_params=False, comp=None, vmin=None, vmax=None, code=''):
         field = self.field
-        grid_x = self.grid_x
-        grid_y = self.grid_y
-
+        grid_x = self.grid_x - self.grid_x[0]
+        grid_y = self.grid_y - self.grid_y[0]
+        if comp is not None:
+            field = np.abs(field - comp)
         txt = ['y,x,val']
-        for y_idx in range(self.cells_ny):
-            for x_idx in range(self.cells_nx):
+        for y_idx in range(self.cells_ny+1):
+            if y_idx == self.cells_ny:
+                y_coord = self.height
+                y_idx -= 1
+            else:
                 y_coord = grid_y[y_idx]
-                x_coord = grid_x[x_idx]
+            for x_idx in range(self.cells_nx+1):
+                if x_idx == self.cells_nx:
+                    x_coord = self.width
+                    x_idx -= 1
+                else:
+                    x_coord = grid_x[x_idx]
                 velocity = field[y_idx, x_idx]
                 txt.append('{:.4f},{:.4f},{:.4f}'.format(y_coord,x_coord,velocity))
         txt = '\n'.join(txt)
-        filename = str(idx) + ' ' + self.field_name + '.csv'
-        with open(direc + filename, 'w') as f:
+        filename = code + '/' + ('it' + str(idx) + '_' if idx != 0 else '') + self.field_name.lower()
+        if comp is not None:
+            filename += '_comp'
+        with open(direc + filename + '.csv', 'w') as f:
             f.write(txt)
             f.close()
+
         if export_params:
-            vmin = np.amin(field) - 0.2*np.std(field)
-            vmax = np.amax(field) + 0.2*np.std(field)
-            nrows = self.cells_ny
-            ncols = self.cells_nx
+            filename = code + '/' + 'params'
+            if vmin is not None or vmax is not None:
+                filename += '_comp'
+            if vmin is None:
+                vmin = np.amin(field) - 0.2*np.std(field)
+            if vmax is None:
+                vmax = np.amax(field) + 0.2*np.std(field)
+            nrows = self.cells_ny+1
+            ncols = self.cells_nx+1
             txt = [
                 r'\def\ymin{'+str(vmin)+r'}',
                 r'\def\ymax{'+str(vmax)+r'}',
@@ -140,10 +157,9 @@ class Environment:
                 r'\def\ncols{'+str(ncols)+r'}',
             ]
             txt = '\n'.join(txt)
-            with open(direc + 'params.tex', 'w') as f:
+            with open(direc + filename + '.tex', 'w') as f:
                 f.write(txt)
                 f.close()
-
 
 
 class EstEnvironment(Environment):

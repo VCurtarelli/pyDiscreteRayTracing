@@ -11,3 +11,6 @@ v1.1.251021:
 	Implemented both proposed and literature technique.
 	Now using bicubic interp for estimating velocity.
 	Many refactorizations and changes in structure.
+v1.1.251022:
+	Improved data export.
+	Some refactoring.
