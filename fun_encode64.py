@@ -1,6 +1,6 @@
 import numpy as np
 
-def encode64(number, symbols_list='0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ=*'):
+def encode(number, symbols_list):
     symbols = [a for a in symbols_list]
     base = len(symbols)
     rep = []
@@ -21,6 +21,12 @@ def encode64(number, symbols_list='0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHI
     rep = ('-' if sign else '') + ''.join(rep)
     # print(rep)
     return rep
+
+def encode64(number, symbols_list='0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ=*'):
+    return 'ts-' + encode(number, symbols_list)
+
+def encode16(number, symbols_list='0123456789abcdef'):
+    return 'h' + encode(number, symbols_list)
 
 
 def mhash(arg):

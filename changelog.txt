@@ -14,3 +14,5 @@ v1.1.251021:
 v1.1.251022:
 	Improved data export.
 	Some refactoring.
+v1.1.251028:
+	Something isn't working right. Implementing EikonalFM based method.

@@ -1,4 +1,5 @@
 from py_libs import *
+from scipy.interpolate import RegularGridInterpolator
 
 
 class Environment:
@@ -18,6 +19,7 @@ class Environment:
         self.field = self.generate_field()
         if mirrored:
             self.field = np.fliplr(self.field)
+        self.interp = RegularGridInterpolator((self.grid_y, self.grid_x), self.field, method='cubic')
         self.field_name = field_name
 
 
@@ -33,21 +35,25 @@ class Environment:
         y = self.grid_y
         X, Y = np.meshgrid(x, y)  # X-Y plane grid
         field_type = 's_shape'
+        X = X / width
+        Y = Y / height
         match field_type:
             case 's_shape':
-                fX = (2 * X / width - 1)  # model for velocity variation on x-axis
-                vX = 10*fX
-                fY = np.exp((0.748 * Y / height) ** 2) - 0.748 * Y / height  # model for velocity variation on y-axis
+                # fX = (2 * X - 1)  # model for velocity variation on x-axis
+                # fY = np.exp((0.748 * Y) ** 2) - 0.748 * Y  # model for velocity variation on y-axis
                 # fY = fY - np.amin(fY)
                 # fY = fY / np.amax(fY)
-                # print(np.amin(fY))
-                # print(np.amax(fY))
-                # input()
-                vY = 100*(1 - fY)
+                # vX = 10*fX
+                # vY = 100*(1 - fY)
+                fX = np.exp((0.748 * X) ** 2) - 0.748 * X  # model for velocity variation on y-axis
+                fY = (2 * Y - 1)  # model for velocity variation on x-axis
+                fX = (fX - np.amin(fX)) / (np.amax(fX) - np.amin(fX))
+                vX = 100*(1-fX)
+                vY = 10*fY
                 velocity_field = 1500 + vY + vX  # velocity field
             case 'circle':
-                fX = (2 * X / width - 1)
-                fY = (2 * Y / height - 1)
+                fX = (2 * X - 1)
+                fY = (2 * Y - 1)
                 velocity_field = 1600 - 150 * np.sqrt((1.1*fX)**2 + fY**2)
             case _:
                 velocity_field = 1500 * np.ones_like(X)
@@ -85,9 +91,10 @@ class Environment:
 
         if show_path:
             for ray in rays:
-                for path in ray.paths:
-                    path = np.array(path)
-                    ax.plot(path[:, 0], path[:, 1], color=(0.5,0.5,0.5), alpha=0.1)
+                if not ray.converged:
+                    for path in ray.paths:
+                        path = np.array(path)
+                        ax.plot(path[:, 0], path[:, 1], color=(0.5,0.5,0.5), alpha=0.1)
 
         # for ray in rays:
         #     x_pos = [ray.source[0], ray.receiver[0]]
@@ -95,7 +102,7 @@ class Environment:
         #     ax.plot(x_pos, y_pos, color=ray.color * 0.3, marker='o')
         for ray in rays:
             path = np.array(ray.path)
-            ax.plot(path[:, 0], path[:, 1], color=ray.color*(1 if ray.converged else 0.5),label=np.around(ray.time, 4), marker='x')
+            ax.plot(path[:, 0], path[:, 1], color=ray.color*(1 if ray.converged else 0.5),label=np.around(ray.time, 4), marker=ray.marker)
 
         for receiver in receivers:
             ax.plot(receiver[0], receiver[1], marker='x', markerfacecolor='darkgreen', markersize=10,
@@ -155,11 +162,60 @@ class Environment:
                 r'\def\ymax{'+str(vmax)+r'}',
                 r'\def\nrows{'+str(nrows)+r'}',
                 r'\def\ncols{'+str(ncols)+r'}',
+                r'\def\pyNx{'+str(ncols)+r'}',
+                r'\def\pyNz{'+str(nrows)+r'}',
+                r'\def\pyN{'+str(nrows*ncols)+r'}',
             ]
             txt = '\n'.join(txt)
             with open(direc + filename + '.tex', 'w') as f:
                 f.write(txt)
                 f.close()
+
+    def calc_grad(self, pos_a_x, pos_a_y, angle):
+        num_cells_x = self.cells_nx
+        num_cells_y = self.cells_ny
+        cell_width = self.cell_width
+        cell_height = self.cell_height
+        x_interp = cell_width*(0.5 + np.arange(num_cells_x))
+        y_interp = cell_height*(0.5 + np.arange(num_cells_y))
+        # self.interp = RegularGridInterpolator((self.grid_y, self.grid_x), self.field, method='cubic')
+        x_p = np.clip(pos_a_x, x_interp[0], x_interp[-1])
+        y_p = np.clip(pos_a_y, y_interp[0], y_interp[-1])
+        x_l = np.clip(x_p - 0.001*min(cell_width,cell_height), x_interp[0], x_interp[-1])
+        x_r = np.clip(x_p + 0.001*min(cell_width,cell_height), x_interp[0], x_interp[-1])
+        y_u = np.clip(y_p - 0.001*min(cell_width,cell_height), y_interp[0], y_interp[-1])
+        y_d = np.clip(y_p + 0.001*min(cell_width,cell_height), y_interp[0], y_interp[-1])
+        positions = np.array([[y_p, x_r],
+                              [y_p, x_l],
+                              [y_u, x_p],
+                              [y_d, x_p]])
+        try:
+            vels = self.interp(positions)
+        except ValueError:
+            vels = np.zeros(positions.shape[0])
+        grad_x = ((vels[0] - vels[1]) / norm(positions[0] - positions[1])).item()
+        grad_y = ((vels[2] - vels[3]) / norm(positions[2] - positions[3])).item()
+        dir_grad = np.angle(grad_x + 1j*grad_y)
+        if np.cos(angle - dir_grad) < 0:
+            dir_grad = (dir_grad + pi + 2 * pi) % (2 * pi)
+        # mag_grad = 5*np.sqrt(grad_x ** 2 + grad_y ** 2)
+        mag_grad = 0.3
+        # print('{:.2f}, {:.2f}, {:.2f}'.format(5000*grad_x, 5000*grad_y, 5000*mag_grad))
+
+        dx_a = np.clip(x_p - mag_grad*np.cos(dir_grad)*min(cell_width,cell_height), x_interp[0], x_interp[-1])
+        dx_b = np.clip(x_p + mag_grad*np.cos(dir_grad)*min(cell_width,cell_height), x_interp[0], x_interp[-1])
+        dy_a = np.clip(y_p - mag_grad*np.sin(dir_grad)*min(cell_width,cell_height), y_interp[0], y_interp[-1])
+        dy_b = np.clip(y_p + mag_grad*np.sin(dir_grad)*min(cell_width,cell_height), y_interp[0], y_interp[-1])
+        positions = np.array([[dy_a, dx_a],
+                              [dy_b, dx_b]])
+
+        # print(positions)
+        # print()
+        vels = self.interp(positions)
+        Va = vels[0].item()
+        Vb = vels[1].item()
+
+        return mag_grad, dir_grad, Va, Vb
 
 
 class EstEnvironment(Environment):
@@ -225,16 +281,16 @@ class EstEnvironment(Environment):
             rank_J = (s[s != 0]).size
             V2 = V[:, rank_J:]
             S[:min(n_rays, num_cells), :min(n_rays, num_cells)] = S_
-            # print('Rank: {} - Shape: {}'.format(rank(self.D @ V2), (self.D @ V2).shape))
             G = (np.eye(num_cells) - V2 @ pinv(self.D @ V2) @ self.D) @ V @ pinv(S) @ U.T
             return G
 
         def iterate_field_lit(alpha=0.01):
             J = self.J
             D = self.D
-            kernel = (1-alpha**2) * J.T @ J + alpha**2 * D.T @ D
+            kernel = J.T @ J + (alpha**2 / (1-alpha**2)) * D.T @ D
             G = pinv(kernel) @ J.T
             return G
+
         num_cells = self.cells_n
         self.update_J(_rays, _n_rays)
         match method:
@@ -257,6 +313,7 @@ class EstEnvironment(Environment):
         z[z <= 0] = 1e12
         self.z = z
         self.field = 1/z.reshape(self.cells_ny, -1)
+        self.interp = RegularGridInterpolator((self.grid_y, self.grid_x), self.field, method='cubic')
 
 
     def cost_function(self, rays, t):

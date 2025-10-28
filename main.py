@@ -2,7 +2,7 @@ from py_params import *
 from class_Ray import Ray
 from class_VelocityField import Environment, EstEnvironment
 import sys
-from fun_encode64 import encode64, mhash
+from fun_encode64 import encode64, mhash, encode16
 
 
 np.set_printoptions(legacy='1.25',precision=2,linewidth=600,threshold=sys.maxsize)
@@ -34,7 +34,7 @@ def main(num_cells_x, num_cells_y, width, height, pos_receivers_x, pos_receivers
     }
 
     hash_val = mhash(parameters.values())
-    code = encode64(hash_val)
+    code = encode16(hash_val)
     direc = 'Results/'
     os.makedirs(direc, exist_ok=True)
     os.makedirs(direc + code, exist_ok=True)
@@ -44,7 +44,7 @@ def main(num_cells_x, num_cells_y, width, height, pos_receivers_x, pos_receivers
         f.write(parameters_text)
     print(code)
 
-    show_path = False
+    show_path = show_iterations
     if mirrored:
         pos_receivers_x = width - pos_receivers_x
         pos_sources_x = width - pos_sources_x
@@ -58,7 +58,7 @@ def main(num_cells_x, num_cells_y, width, height, pos_receivers_x, pos_receivers
     obs_rays = []
     for source in pos_sources:
         for receiver in pos_receivers:
-            obs_rays.append(Ray(source, receiver, 'observed'))
+            obs_rays.append(Ray(source, receiver, 'observed', marker='x'))
 
     obs_environment = Environment(num_cells_x, num_cells_y, width, height, mirrored=True)
 
@@ -79,11 +79,11 @@ def main(num_cells_x, num_cells_y, width, height, pos_receivers_x, pos_receivers
     for idx, source in enumerate(pos_sources):
         for jdx, receiver in enumerate(pos_receivers):
             if obs_rays[len(pos_receivers) * idx + jdx].converged:
-                ray = Ray(source, receiver, 'Literature', color=(180, 180, 0))
+                ray = Ray(source, receiver, 'Literature', color=(180, 180, 0), marker='1')
                 est_rays_lit.append(ray)
                 ray.calc_path(est_environment_lit)
                 ray.calc_time(est_environment_lit)
-                ray = Ray(source, receiver, 'Proposed', color=(180, 0, 0))
+                ray = Ray(source, receiver, 'Proposed', color=(180, 0, 0), marker='2')
                 est_rays_prp.append(ray)
                 ray.calc_path(est_environment_prp)
                 ray.calc_time(est_environment_prp)
@@ -127,15 +127,17 @@ def main(num_cells_x, num_cells_y, width, height, pos_receivers_x, pos_receivers
         print('\tEst. times - Lit.: ' + ' '.join(['{:.4f}'.format(time) for time in est_times_lit]))
         print('\tEst. times - Prp.: ' + ' '.join(['{:.4f}'.format(time) for time in est_times_prp]))
         print('\tObs. times:        ' + ' '.join(['{:.4f}'.format(time) for time in obs_times]))
-        print('\tError - Lit. - {:.4f}'.format(np.sum(err_time_lit)))
-        print('\tError - Prp. - {:.4f}'.format(np.sum(err_time_prp)))
-        print(idx, est_environment_lit.cost_function(est_rays_lit, obs_times), 0.01*float(np.mean(obs_times)))
+        print('\tError - Lit. - {:.2e}'.format(np.sum(err_time_lit)))
+        print('\tError - Prp. - {:.2e}'.format(np.sum(err_time_prp)))
+        # print(idx, est_environment_lit.cost_function(est_rays_lit, obs_times), 0.01*float(np.mean(obs_times)))
+
         show_figure([(obs_environment, obs_rays),
                      (est_environment_lit,est_rays_lit),
                      (est_environment_prp,est_rays_prp)], pos_receivers, pos_sources, title='Rays Iterated', show_path=show_path)
+
         if all([ray.converged for ray in est_rays_lit]) and est_environment_lit.cost_function(est_rays_lit, obs_times) < 0.01*float(np.mean(obs_times)):
             print("ALL CONVERGED")
-        if idx == 6:
+        if idx == 10:
             print("LIMIT REACHED")
             break
         idx += 1
@@ -189,14 +191,23 @@ if __name__ == '__main__':
     ny = 15
     w = 5000
     h = 5000
-    ns = 3
-    nr = 8
+    ns = 10
+    nr = 3
 
-    pos_rx = np.linspace(0.95*w, 0.15*w, nr)
-    pos_ry = np.array([0.95*h for _ in range(nr)])
+    devices = 'horizontal'
+    if devices == 'horizontal':
+        pos_rx = np.linspace(0.95*w, 0.15*w, nr)
+        pos_ry = np.array([0.95*h for _ in range(nr)])
 
-    pos_sx = np.linspace(0.95*w, 0.05*w, ns)
-    pos_sy = np.array([0.05*h for _ in range(ns)])
+        pos_sx = np.linspace(0.95*w, 0.05*w, ns)
+        pos_sy = np.array([0.05*h for _ in range(ns)])
+    if devices == 'vertical':
+        pos_rx = np.array([0.95*w for _ in range(nr)])
+        pos_ry = np.linspace(0.95*h, 0.15*h, nr)
+
+        pos_sx = np.array([0.05*w for _ in range(ns)])
+        pos_sy = np.linspace(0.95*h, 0.05*h, ns)
+
     alpha = 0.05
     epsilon = 0.1
 

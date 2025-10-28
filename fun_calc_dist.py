@@ -24,26 +24,29 @@ def calc_closest_point(receiver, path, return_params=False):
             p1 = np.array(path[cls]).astype(float).reshape(-1, 1)
             # print(cls, closest)
             # print(p0, p1)
-            if np.sum((p1 - p0) ** 2) == 0:
-                if np.sum((p0 - pr) * (p1 - p0)) == 0:
-                    t = 0
-                else:
-                    print("ERROR: UNCALCULABLE t")
-                    t = np.inf
+            # print('nsum:', np.sum((pr - p0) * (p1 - p0)))
+            # print('dsum:', np.sum((p1 - p0) ** 2))
+            if np.sum((p1 - p0) ** 2) < 1e-12:
+                t = 0
             else:
                 t = np.sum((pr - p0) * (p1 - p0)) / np.sum((p1 - p0) ** 2)
+            # print('t:', t)
             pp = p0 + t * (p1 - p0)
             dist = norm(pp - pr)
             dists.append(dist)
             ts.append(t)
             pps.append(pp)
             # print(ts)
-        if any([0<=t<=1 for t in ts]):
+        # print(ts)
+        if any([0<t<1 for t in ts]):
             # print('valid t')
             ts = [t if t > 0 else np.inf for t in ts]
+            # print(ts)
+            # print()
             idx = ts.index(min(ts))
         else:
             idx = dists.index(min(dists))
+            # print(idx)
         pp = pps[idx]
         t = ts[idx]
         cls = closes[idx]

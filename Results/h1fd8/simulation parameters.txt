@@ -1,0 +1,12 @@
+num_cells_x: 10
+num_cells_y: 15
+width: 5000
+height: 5000
+pos_receivers_x: [4750. 4750.]
+pos_receivers_y: [4750.  750.]
+pos_sources_x: [250. 250. 250. 250. 250. 250. 250. 250. 250. 250.]
+pos_sources_y: [4750. 4250. 3750. 3250. 2750. 2250. 1750. 1250.  750.  250.]
+mirrored: True
+alpha: 0.05
+epsilon: 0.1
+code: h1fd8

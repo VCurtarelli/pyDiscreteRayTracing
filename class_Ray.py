@@ -3,10 +3,11 @@ import scipy.interpolate
 from py_libs import *
 from fun_receiver_search import receiver_search
 from fun_calc_dist import calc_dist, calc_closest_point
+import eikonalfm as ekf
 
 
 class Ray:
-    def __init__(self, source, receiver, ray_type, color=(0, 180, 0)):
+    def __init__(self, source, receiver, ray_type, color=(0, 180, 0), marker='x'):
         self.source = source
         self.receiver = receiver
         self.path = None
@@ -16,11 +17,56 @@ class Ray:
         self.thetas = None
         self.lengths = None
         self.color = np.array(color)/255
+        self.marker = marker
         self.converged = False
         self.paths = None
         self.ray_type = ray_type
 
-    def calc_path(self, velocity_field, stop_param=0.015, iteration_step=0.1, iterations_max=100):
+
+    def new_calc_path(self, velocity_field):
+        field = velocity_field.field
+        cell_width = velocity_field.cell_width
+        cell_height = velocity_field.cell_height
+        ds = (cell_height, cell_width)
+        xs = (self.source[1] // cell_height, self.source[0] // cell_width)
+        fm_tau = ekf.fast_marching(field,ds,xs,2)
+        ffm_tau1 = ekf.factored_fast_marching(field,ds,xs,2)
+        curr_cell = np.array((self.receiver[1] // cell_height, self.receiver[0] // cell_width))
+        visited_cells = [curr_cell]
+        while True:
+            xp = curr_cell[1]
+            xr = curr_cell[1] + 1
+            xl = curr_cell[1] - 1
+            yp = curr_cell[0]
+            yu = curr_cell[0] + 1
+            yd = curr_cell[0] - 1
+            tr = np.inf
+            tl = np.inf
+            tu = np.inf
+            td = np.inf
+            if xr < velocity_field.cells_nx:
+                tr = fm_tau[yp,xr]
+            if 0 <= xl:
+                tl = fm_tau[yp,xl]
+            if yu < velocity_field.cells_ny:
+                tu = fm_tau[yu, xp]
+            if 0 <= yd:
+                td = fm_tau[yd, yp]
+            times = [tr, tl, tu, td]
+            direc = times.index(min(times))
+            match direc:
+                case 0:
+                    next_cell = curr_cell + np.array([ 0, 1])
+                case 1:
+                    next_cell = curr_cell + np.array([ 0,-1])
+                case 2:
+                    next_cell = curr_cell + np.array([ 1, 0])
+                case 3:
+                    next_cell = curr_cell + np.array([-1, 0])
+            pass
+
+
+    def calc_path(self, velocity_field, stop_param=0.01, iteration_step=0.05, iterations_max=100):
         self.angle = np.angle((np.array(self.receiver) - np.array(self.source)) @ np.array([1, 1j]).T)
 
         theta_0 = self.angle
@@ -57,7 +103,7 @@ class Ray:
                 self.converged = False
                 break
             if len(angles) % 10 == 0:
-                iteration_step *= 2/3
+                iteration_step *= 0.7
             angles.append(new_theta)
             paths.append(positions)
             self.angle = new_theta
@@ -111,7 +157,7 @@ class Ray:
             pos_a_x, pos_a_y = positions[-1]  # crossing position from cell a (previous cell) to cell b (current cell)
             idx_y, idx_x = cells[-1]
             theta = thetas[-1]
-            mag_grad_V, direc_grad_V, Va, Vb = self.calc_grad(velocity_field, pos_a_x, pos_a_y, theta)
+            mag_grad_V, direc_grad_V, Va, Vb = velocity_field.calc_grad(pos_a_x, pos_a_y, theta)
 
             phi = direc_grad_V  #TODO: IF GRADIENT OF VELOCITY AND RAY DIRECTIONS ARE REVERTED, CANCEL IT
             if np.cos(theta-phi) < 0:
@@ -167,12 +213,13 @@ class Ray:
             pos_b_x = px + t*cos_theta_b
             pos_b_y = py + t*sin_theta_b
 
+            if all([t_ == np.inf for t_ in ts]):
+                break
             thetas.append(float(theta_b))
             positions.append((pos_b_x, pos_b_y))
             cells.append((idx_y, idx_x))
             if (not 0<=pos_b_x<=width) or (not 0<=pos_b_y<=height):
                 break
-    
             if sin_theta_b > 1 or np.isnan(sin_theta_b):
                 break
 
@@ -212,43 +259,46 @@ class Ray:
         self.path = positions
         return thetas,lengths,positions,cells
 
-    def calc_grad(self, vf, pos_a_x, pos_a_y, angle):
-        num_cells_x = vf.cells_nx
-        num_cells_y = vf.cells_ny
-        cell_width = vf.cell_width
-        cell_height = vf.cell_height
-        field = vf.field
-        x_interp = cell_width*(0.5 + np.arange(num_cells_x))
-        y_interp = cell_height*(0.5 + np.arange(num_cells_y))
-        interp = scipy.interpolate.RegularGridInterpolator((y_interp, x_interp), field, method='cubic')
-        x_p = np.clip(pos_a_x, x_interp[0], x_interp[-1])
-        y_p = np.clip(pos_a_y, y_interp[0], y_interp[-1])
-        x_l = np.clip(x_p - 0.01*cell_width, x_interp[0], x_interp[-1])
-        x_r = np.clip(x_p + 0.01*cell_width, x_interp[0], x_interp[-1])
-        y_u = np.clip(y_p - 0.01*cell_height, y_interp[0], y_interp[-1])
-        y_d = np.clip(y_p + 0.01*cell_height, y_interp[0], y_interp[-1])
-        positions = np.array([[y_p, x_r],
-                              [y_p, x_l],
-                              [y_u, x_p],
-                              [y_d, x_p]])
-        try:
-            vels = interp(positions)
-        except ValueError:
-            vels = np.zeros(positions.shape[0])
-        grad_x = ((vels[0] - vels[1]) / norm(positions[0] - positions[1])).item()
-        grad_y = ((vels[2] - vels[3]) / norm(positions[2] - positions[3])).item()
-        dir_grad = (float(np.angle(grad_x + 1j * grad_y)) + 2 * pi) % (2 * pi)
-        mag_grad = 0.3*np.sqrt(grad_x ** 2 + grad_y ** 2)
-
-        dx_a = np.clip(x_p - mag_grad*np.cos(angle)*cell_width, x_interp[0], x_interp[-1])
-        dx_b = np.clip(x_p + mag_grad*np.cos(angle)*cell_width, x_interp[0], x_interp[-1])
-        dy_a = np.clip(y_p - mag_grad*np.sin(angle)*cell_height, y_interp[0], y_interp[-1])
-        dy_b = np.clip(y_p + mag_grad*np.sin(angle)*cell_height, y_interp[0], y_interp[-1])
-        positions = np.array([[dy_a, dx_a],
-                              [dy_b, dx_b]])
-
-        vels = interp(positions)
-        Va = vels[0].item()
-        Vb = vels[1].item()
-
-        return mag_grad, dir_grad, Va, Vb
+    # def calc_grad(self, vf, pos_a_x, pos_a_y, angle):
+    #     num_cells_x = vf.cells_nx
+    #     num_cells_y = vf.cells_ny
+    #     cell_width = vf.cell_width
+    #     cell_height = vf.cell_height
+    #     field = vf.field
+    #     x_interp = cell_width*(0.5 + np.arange(num_cells_x))
+    #     y_interp = cell_height*(0.5 + np.arange(num_cells_y))
+    #     interp = scipy.interpolate.RegularGridInterpolator((y_interp, x_interp), field, method='cubic')
+    #     x_p = np.clip(pos_a_x, x_interp[0], x_interp[-1])
+    #     y_p = np.clip(pos_a_y, y_interp[0], y_interp[-1])
+    #     x_l = np.clip(x_p - 0.01*cell_width, x_interp[0], x_interp[-1])
+    #     x_r = np.clip(x_p + 0.01*cell_width, x_interp[0], x_interp[-1])
+    #     y_u = np.clip(y_p - 0.01*cell_height, y_interp[0], y_interp[-1])
+    #     y_d = np.clip(y_p + 0.01*cell_height, y_interp[0], y_interp[-1])
+    #     positions = np.array([[y_p, x_r],
+    #                           [y_p, x_l],
+    #                           [y_u, x_p],
+    #                           [y_d, x_p]])
+    #     try:
+    #         vels = interp(positions)
+    #     except ValueError:
+    #         vels = np.zeros(positions.shape[0])
+    #     grad_x = ((vels[0] - vels[1]) / norm(positions[0] - positions[1])).item()
+    #     grad_y = ((vels[2] - vels[3]) / norm(positions[2] - positions[3])).item()
+    #     dir_grad = (float(np.angle(grad_x + 1j * grad_y)) + 2 * pi) % (2 * pi)
+    #     mag_grad = 5*np.sqrt(grad_x ** 2 + grad_y ** 2)
+    #     # print('{:.2f}, {:.2f}, {:.2f}'.format(5000*grad_x, 5000*grad_y, 5000*mag_grad))
+    #
+    #     dx_a = np.clip(x_p - mag_grad*np.cos(angle)*cell_width, x_interp[0], x_interp[-1])
+    #     dx_b = np.clip(x_p + mag_grad*np.cos(angle)*cell_width, x_interp[0], x_interp[-1])
+    #     dy_a = np.clip(y_p - mag_grad*np.sin(angle)*cell_height, y_interp[0], y_interp[-1])
+    #     dy_b = np.clip(y_p + mag_grad*np.sin(angle)*cell_height, y_interp[0], y_interp[-1])
+    #     positions = np.array([[dy_a, dx_a],
+    #                           [dy_b, dx_b]])
+    #
+    #     # print(positions)
+    #     # print()
+    #     vels = interp(positions)
+    #     Va = vels[0].item()
+    #     Vb = vels[1].item()
+    #
+    #     return mag_grad, dir_grad, Va, Vb
