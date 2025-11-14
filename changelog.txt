@@ -1,18 +1,21 @@
-v1.0.251014:
+v1.0.251014
 	Working appropriately.
 	Need to implement multi-source.
-v1.1.251014:
 	Changed to OOP-based structure.
 	Now supports multiple sources.
 	Better factored.
 	Need to implement rank-defficiency exploit in D V2.
-v1.1.251021:
+v1.1.251021
 	Many changes.
 	Implemented both proposed and literature technique.
 	Now using bicubic interp for estimating velocity.
 	Many refactorizations and changes in structure.
-v1.1.251022:
+v1.1.251022
 	Improved data export.
 	Some refactoring.
-v1.1.251028:
+v1.1.251028
 	Something isn't working right. Implementing EikonalFM based method.
+v1.1.251114
+	Seems to be working.
+	Need to choose proper simulation conditions.
+	To add multi-function devices (source + receiver).
