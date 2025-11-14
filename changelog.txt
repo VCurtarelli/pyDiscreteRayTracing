@@ -19,3 +19,4 @@ v1.1.251114
 	Seems to be working.
 	Need to choose proper simulation conditions.
 	To add multi-function devices (source + receiver).
+	Removed unnecessary files (from before OOP).

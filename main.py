@@ -50,14 +50,18 @@ def main(num_cells_x, num_cells_y, width, height, pos_receivers_x, pos_receivers
         pos_sources_x = width - pos_sources_x
     pos_receivers = list(set(zip(pos_receivers_x, pos_receivers_y)))
     pos_sources = list(set(zip(pos_sources_x, pos_sources_y)))
+    pos_receivers = pos_receivers + pos_sources
+    pos_sources = pos_receivers
 
     export_pos_devices(pos_sources, pos_receivers, direc + code + '/')
     # pos_sources = [pos_sources[0]]
     # pos_receivers = [pos_receivers[0]]
 
     obs_rays = []
-    for source in pos_sources:
-        for receiver in pos_receivers:
+    for idx_s, source in enumerate(pos_sources):
+        for idx_r, receiver in enumerate(pos_receivers):
+            if source == receiver:
+                continue
             obs_rays.append(Ray(source, receiver, 'observed', marker='x'))
 
     obs_environment = Environment(num_cells_x, num_cells_y, width, height, obs_rays, mirrored=False)
@@ -77,7 +81,8 @@ def main(num_cells_x, num_cells_y, width, height, pos_receivers_x, pos_receivers
     est_rays_prp = []
     for idx, source in enumerate(pos_sources):
         for jdx, receiver in enumerate(pos_receivers):
-            # if obs_rays[len(pos_receivers) * idx + jdx].converged:
+            if source == receiver:
+                continue
             ray = Ray(source, receiver, 'Literature', color=(180, 180, 0), marker='1')
             est_rays_lit.append(ray)
             ray = Ray(source, receiver, 'Proposed', color=(0, 180, 180), marker='2')

@@ -121,11 +121,11 @@ class Environment:
                     alpha=0.1)
 
         for receiver in receivers:
-            ax.plot(receiver[0], receiver[1], marker='x', markerfacecolor='blue', markersize=10,
-                        markeredgecolor='blue', markeredgewidth=5)
+            ax.plot(receiver[0], receiver[1], marker='x', markerfacecolor='blue', markersize=6,
+                        markeredgecolor='blue', markeredgewidth=3)
         for source in sources:
-            ax.plot(source[0], source[1], marker='+', markerfacecolor='red', markersize=10,
-                        markeredgecolor='red', markeredgewidth=4)
+            ax.plot(source[0], source[1], marker='+', markerfacecolor='red', markersize=6,
+                        markeredgecolor='red', markeredgewidth=2)
 
 
         # final plotting setup
