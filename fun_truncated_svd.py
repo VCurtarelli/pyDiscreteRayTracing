@@ -6,6 +6,7 @@ def truncated_svd(mat, epsilon, return_rank=True):
     U, s, Vh = svd(mat)
     V = Vh.T
     s[s < epsilon * s[0]] = 0
+    # s[int(epsilon*s.size):] = 0
     S_ = np.diag(s)
     S = np.zeros_like(mat)
     mat_rank = (s[s != 0]).size

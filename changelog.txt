@@ -20,3 +20,5 @@ v1.1.251114
 	Need to choose proper simulation conditions.
 	To add multi-function devices (source + receiver).
 	Removed unnecessary files (from before OOP).
+v1.1.251215
+	Some big refactoring.

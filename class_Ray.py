@@ -19,17 +19,16 @@ class Ray:
         self.marker = marker
         self.converged = True
         self.ray_type = ray_type
-        self.method = 'new'
 
     def calc_path(self, velocity_field):
-        method = self.method
+        method = velocity_field.method
         if method == 'new':
             self.new_calc_path(velocity_field)
         if method == 'old':
             self.old_calc_path(velocity_field)
 
     def calc_time(self, velocity_field):
-        method = self.method
+        method = velocity_field.method
         if method == 'new':
             return self.new_calc_time(velocity_field)
         if method == 'old':

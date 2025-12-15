@@ -3,7 +3,13 @@ from py_libs import *
 from scipy.interpolate import RegularGridInterpolator
 from scipy.signal import convolve2d
 
+def munk(eps, height, y_vec):
+    Z = 2 * (height * y_vec - 1300) / 1300
+    vY = 1500 * (1 + eps * (Z - 1 + np.exp(-Z)))
+    return vY
 
+
+rms = lambda x: np.sqrt(np.mean(x**2))
 class Environment:
     def __init__(self, num_cells_x, num_cells_y, width, height, rays, field_name='Observed', mirrored=False):
         self.cells_nx = num_cells_x
@@ -21,7 +27,12 @@ class Environment:
         self.field = self.generate_field()
         if mirrored:
             self.field = np.fliplr(self.field)
-        self.interp = RegularGridInterpolator((self.grid_y, self.grid_x), self.field, method='cubic')
+        self.method = 'new'
+        if self.method == 'old':
+            self.interp_method = 'cubic'
+        else:
+            self.interp_method = 'nearest'
+        self.interp = RegularGridInterpolator((self.grid_y, self.grid_x), self.field, method=self.interp_method)
         self.field_name = field_name
         self.rays = rays
 
@@ -52,8 +63,7 @@ class Environment:
                 velocity_field = 1600 - 100 * np.sqrt(fX**2 + fY**2)
             case 'munk':
                 epsilon=0.00737
-                Z = 2*(height*Y-1300)/1300
-                vY = 1500 * (1+epsilon*(Z-1+np.exp(-Z)))
+                vY = munk(epsilon, height, Y)
                 vX = 5*(2*X-1)
                 velocity_field = vY + vX
             case _:
@@ -109,7 +119,7 @@ class Environment:
 
         if show_path:
             for ray in rays:
-                if ray.method == 'old':
+                if self.method == 'old':
                     for path in ray.paths:
                         path = np.array(path)
                         ax.plot(path[:, 0], path[:, 1], color=(0.5,0.5,0.5), alpha=0.5)
@@ -168,9 +178,9 @@ class Environment:
             if vmin is not None or vmax is not None:
                 filename += '_comp'
             if vmin is None:
-                vmin = np.amin(field) - 0.2*np.std(field)
+                vmin = 5*np.floor((np.amin(field) - 0.2*np.std(field))/5)
             if vmax is None:
-                vmax = np.amax(field) + 0.2*np.std(field)
+                vmax = 5*np.ceil((np.amax(field) + 0.2*np.std(field))/5)
             nrows = self.cells_ny+1
             ncols = self.cells_nx+1
             txt = [
@@ -244,10 +254,10 @@ class EstEnvironment(Environment):
         self.D = None
         self.B = None
         self.generate_D()
-        self.generate_B(sigma=0.05)
+        self.generate_B(sigma=0.00)
         self.field_name = field_name
         self.est_time_mse = []
-        self.est_ssf_mse = []
+        self.est_ssf_rms = []
 
     def generate_D(self):
         num_cells_x = self.cells_nx
@@ -278,7 +288,6 @@ class EstEnvironment(Environment):
             D_laplacian[i, :] = -D_laplacian[i, :] / np.abs(D_laplacian[i,i])
             pass
         self.D = D_laplacian
-        np.savetxt('mat_D_laplacian.csv', D_laplacian, delimiter=',', fmt='%d')
 
     def generate_B(self, sigma=1.):
         num_cells_x = self.cells_nx
@@ -324,12 +333,12 @@ class EstEnvironment(Environment):
         z[z <= 0] = np.median(z[z > 0])
         self.z = z
         self.field = 1/z.reshape(self.cells_ny, -1)
-        self.interp = RegularGridInterpolator((self.grid_y, self.grid_x), self.field, method='cubic')
+        self.interp = RegularGridInterpolator((self.grid_y, self.grid_x), self.field, method=self.interp_method)
 
     def iterate_field(self, _rays, _n_rays, _obs_times, method='prop', **kwargs):
         if method.endswith('*'):
             self.D = np.eye(self.D.shape[0])
-        def iterate_field_prop(epsilon=0.05, obs_times=0):
+        def iterate_field_prop1(epsilon=0.05, obs_times=0):
             U, S, V, rank_J = truncated_svd(self.J @ self.B, epsilon)
             V2 = V[:, rank_J:]
 
@@ -342,20 +351,37 @@ class EstEnvironment(Environment):
                 z0 = np.zeros_like(z)
             return z + z0
 
+        def iterate_field_prop2(epsilon=0.05, obs_times=0):
+            U_, S_, V_, rank_J_ = truncated_svd(self.J @ self.B, epsilon)
+            U, s, Vh = svd(self.J @ self.B)
+            V = Vh.T
+            rank_J = (s[s!=0]).size
+            V2 = V[:, rank_J:]
+
+            G = self.B @ (np.eye(num_cells) - V2 @ pinv(self.D @ V2) @ self.D) @ V_ @ pinv(S_) @ U_.T
+            z = G @ obs_times
+            if method.endswith('*'):
+                s0 = kwargs['model']
+                z0 = V2 @ pinv(V2) @ s0
+            else:
+                z0 = np.zeros_like(z)
+            return z + z0
+
         def iterate_field_lit(alpha=0.01, obs_times=0):
             J = self.J
+            n_alpha = alpha / np.sqrt(1-alpha**2)
             facJ = np.amax(svd(J)[1])
             D = self.D
             J = J / facJ
             D = D / np.amax(svd(D)[1])
             B = self.B
-            kernel = B.T @ J.T @ J @ B + (alpha**2/(1-alpha**2)) * D.T @ D
+            kernel = B.T @ J.T @ J @ B + n_alpha**2 * D.T @ D
             ikernel = inv(kernel)
             G = (1/facJ) * B @ ikernel @ B.T @ J.T
             z = G @ obs_times
             if method.endswith('*'):
                 s0 = kwargs['model']
-                z0 = alpha**2 * ikernel @ s0
+                z0 = n_alpha**2 * ikernel @ s0
             else:
                 z0 = np.zeros_like(z)
             return z + z0
@@ -369,7 +395,7 @@ class EstEnvironment(Environment):
                     _epsilon=0.0
                 else:
                     _epsilon=kwargs['epsilon']
-                z = iterate_field_prop(_epsilon, _obs_times)
+                z = iterate_field_prop1(_epsilon, _obs_times)
             case 'literature' | 'literature*':
                 if not 'alpha' in kwargs.keys():
                     _alpha=0.0
@@ -396,8 +422,8 @@ class EstEnvironment(Environment):
         return self.J.T @ (self.J @ self.z - t)
 
     def calc_metrics(self, t, s):
-        self.est_time_mse.append(self.cost_function(self.rays, t))
-        self.est_ssf_mse.append(1/self.cells_n * norm(s - 1/self.z))
+        self.est_time_mse.append(1000*self.cost_function(self.rays, t))
+        self.est_ssf_rms.append(rms(self.field - s))
 
     def export_metrics(self, direc='Results/', code=''):
         est_time_txt = ['x,y']
@@ -406,7 +432,7 @@ class EstEnvironment(Environment):
         for idx in range(len(self.est_time_mse)):
             iteration = idx+1
             est_time = self.est_time_mse[idx]
-            est_ssf = self.est_ssf_mse[idx]
+            est_ssf = self.est_ssf_rms[idx]
             est_time_txt.append('{},{:.8f}'.format(iteration,est_time))
             est_ssf_txt.append('{},{:.4f}'.format(iteration,est_ssf))
 
