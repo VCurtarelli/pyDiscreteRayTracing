@@ -1,13 +1,6 @@
-from fun_truncated_svd import truncated_svd
+from fun_munk import munk
 from py_libs import *
 from scipy.interpolate import RegularGridInterpolator
-from scipy.signal import convolve2d
-
-def munk(eps, height, y_vec):
-    Z = 2 * (height * y_vec - 1300) / 1300
-    vY = 1500 * (1 + eps * (Z - 1 + np.exp(-Z)))
-    return vY
-
 
 rms = lambda x: np.sqrt(np.mean(x**2))
 class Environment:
@@ -23,8 +16,13 @@ class Environment:
 
         self.grid_x = self.cell_width*(0.5 + np.arange(num_cells_x))
         self.grid_y = self.cell_height*(0.5 + np.arange(num_cells_y))
+        self.vx = np.zeros([num_cells_y, num_cells_x])
+        self.vy = np.zeros([num_cells_y, num_cells_x])
 
+        self.traveled_dists = None
         self.field = self.generate_field()
+        self.true_field = np.copy(self.field)
+
         if mirrored:
             self.field = np.fliplr(self.field)
         self.method = 'new'
@@ -44,30 +42,15 @@ class Environment:
         x = self.grid_x
         y = self.grid_y
         X, Y = np.meshgrid(x, y)  # X-Y plane grid
-        field_type = 'munk'
         X = X / width
         Y = Y / height
-        match field_type:
-            case 's_shape':
-                fX = (2 * X - 1)  # model for velocity variation on x-axis
-                Y = 1-Y
-                fY = 2*Y**2 - Y**3 - Y**5
-                fY = fY - np.amin(fY)
-                fY = fY / np.amax(fY)
-                vX = 0*fX
-                vY = 30*fY
-                velocity_field = 1500 + vY + vX  # velocity field
-            case 'circle':
-                fX = (2 * X - 1)
-                fY = (2 * Y - 1)
-                velocity_field = 1600 - 100 * np.sqrt(fX**2 + fY**2)
-            case 'munk':
-                epsilon=0.00737
-                vY = munk(epsilon, height, Y)
-                vX = 5*(2*X-1)
-                velocity_field = vY + vX
-            case _:
-                velocity_field = 1600 * np.ones_like(X)
+        epsilon=0.00737
+        vY = munk(epsilon, height, Y)
+        vX = 5*(2*X-1)
+        velocity_field = vY + vX
+
+        self.vx = vX
+        self.vy = vY
 
         return velocity_field
 
@@ -245,14 +228,24 @@ class Environment:
             ray.calc_path(self)
             ray.calc_time(self)
 
+    def update_R(self, rays, n_rays):
+        num_cells = self.cells_n
+        R = np.zeros([n_rays, num_cells])
+        for idx, ray in enumerate(rays):
+            ray.calc_path(self)
+            _, Lengths = ray.calc_time(self)
+            R[idx, :] = Lengths.reshape(-1,)
+        self.traveled_dists = R
+
+        return R
 
 class EstEnvironment(Environment):
     def __init__(self, num_cells_x, num_cells_y, width, height, rays, initial_value=1100, field_name='Estimate'):
         super().__init__(num_cells_x, num_cells_y, width, height, rays)
         self.update_field((1/initial_value)*np.ones_like(self.field))
-        self.J = None
-        self.D = None
-        self.B = None
+        self.laplacian_mtx = None
+        self.blur_mtx = None
+        self.depth_mask = None
         self.generate_D()
         self.generate_B(sigma=0.00)
         self.field_name = field_name
@@ -287,7 +280,7 @@ class EstEnvironment(Environment):
             D_laplacian[i, i] = -(np.sum(D_laplacian[i, :]) - D_laplacian[i, i])
             D_laplacian[i, :] = -D_laplacian[i, :] / np.abs(D_laplacian[i,i])
             pass
-        self.D = D_laplacian
+        self.laplacian_mtx = D_laplacian
 
     def generate_B(self, sigma=1.):
         num_cells_x = self.cells_nx
@@ -316,18 +309,31 @@ class EstEnvironment(Environment):
                 blur[(i - 1) * num_cells_x:i * num_cells_x, i * num_cells_x:(i + 1) * num_cells_x] = block_B
                 blur[i * num_cells_x:(i + 1) * num_cells_x, (i - 1) * num_cells_x:i * num_cells_x] = block_B
             blur[i * num_cells_x:(i + 1) * num_cells_x, i * num_cells_x:(i + 1) * num_cells_x] = block_A
-        self.B = blur
+        self.blur_mtx = blur
 
-    def update_J(self, rays, n_rays):
+    def generate_J(self, depth=1000):
+        if depth is None:
+            self.depth_mask = np.zeros([self.field.size,self.field.size])
+            return None
+        J = np.zeros_like(self.field)
+        J[np.arange(self.cells_ny)>depth/self.cell_height, :] = 1
+        J = J.reshape(-1,)
+        J = np.diagflat(J)
+        self.depth_mask = J
+
+        return None
+
+
+    def update_R(self, rays, n_rays):
         num_cells = self.cells_n
-        J = np.zeros([n_rays, num_cells])
+        R = np.zeros([n_rays, num_cells])
         for idx, ray in enumerate(rays):
             ray.calc_path(self)
             _, Lengths = ray.calc_time(self)
-            J[idx, :] = Lengths.reshape(-1,)
-        self.J = J
+            R[idx, :] = Lengths.reshape(-1,)
+        self.traveled_dists = R
 
-        return J
+        return R
 
     def update_field(self, z):
         z[z <= 0] = np.median(z[z > 0])
@@ -335,83 +341,39 @@ class EstEnvironment(Environment):
         self.field = 1/z.reshape(self.cells_ny, -1)
         self.interp = RegularGridInterpolator((self.grid_y, self.grid_x), self.field, method=self.interp_method)
 
-    def iterate_field(self, _rays, _n_rays, _obs_times, method='prop', **kwargs):
-        if method.endswith('*'):
-            self.D = np.eye(self.D.shape[0])
-        def iterate_field_prop1(epsilon=0.05, obs_times=0):
-            U, S, V, rank_J = truncated_svd(self.J @ self.B, epsilon)
-            V2 = V[:, rank_J:]
+    def iterate_field(self, rays, n_rays, alpha=0.01, beta=0.01, obs_times=0,
+                      model_slowness=None, masking_depth=None):
+        self.update_R(rays, n_rays)
+        if model_slowness is None:
+            model_slowness = np.ones_like(self.z) * 1 / 1500
+        R = self.traveled_dists
+        D = self.laplacian_mtx
+        B = self.blur_mtx
+        self.generate_J(depth=masking_depth)
+        J = self.depth_mask
+        z0 = model_slowness
+        obs_times = np.array(obs_times).reshape(-1, 1)
 
-            G = self.B @ (np.eye(num_cells) - V2 @ pinv(self.D @ V2) @ self.D) @ V @ pinv(S) @ U.T
-            z = G @ obs_times
-            if method.endswith('*'):
-                s0 = kwargs['model']
-                z0 = V2 @ pinv(V2) @ s0
-            else:
-                z0 = np.zeros_like(z)
-            return z + z0
+        n_alpha = alpha / np.sqrt(1 - alpha ** 2)
+        n_beta = beta / np.sqrt(1 - beta ** 2)
+        facR = 1
+        facR = np.amax(svd(R)[1])
+        R = R / facR
+        D = D / np.amax(svd(D)[1])
+        J = J / np.amax(svd(J)[1])
 
-        def iterate_field_prop2(epsilon=0.05, obs_times=0):
-            U_, S_, V_, rank_J_ = truncated_svd(self.J @ self.B, epsilon)
-            U, s, Vh = svd(self.J @ self.B)
-            V = Vh.T
-            rank_J = (s[s!=0]).size
-            V2 = V[:, rank_J:]
-
-            G = self.B @ (np.eye(num_cells) - V2 @ pinv(self.D @ V2) @ self.D) @ V_ @ pinv(S_) @ U_.T
-            z = G @ obs_times
-            if method.endswith('*'):
-                s0 = kwargs['model']
-                z0 = V2 @ pinv(V2) @ s0
-            else:
-                z0 = np.zeros_like(z)
-            return z + z0
-
-        def iterate_field_lit(alpha=0.01, obs_times=0):
-            J = self.J
-            n_alpha = alpha / np.sqrt(1-alpha**2)
-            facJ = np.amax(svd(J)[1])
-            D = self.D
-            J = J / facJ
-            D = D / np.amax(svd(D)[1])
-            B = self.B
-            kernel = B.T @ J.T @ J @ B + n_alpha**2 * D.T @ D
-            ikernel = inv(kernel)
-            G = (1/facJ) * B @ ikernel @ B.T @ J.T
-            z = G @ obs_times
-            if method.endswith('*'):
-                s0 = kwargs['model']
-                z0 = n_alpha**2 * ikernel @ s0
-            else:
-                z0 = np.zeros_like(z)
-            return z + z0
-
-
-        num_cells = self.cells_n
-        self.update_J(_rays, _n_rays)
-        match method:
-            case 'proposed' | 'proposed*':
-                if not 'epsilon' in kwargs.keys():
-                    _epsilon=0.0
-                else:
-                    _epsilon=kwargs['epsilon']
-                z = iterate_field_prop1(_epsilon, _obs_times)
-            case 'literature' | 'literature*':
-                if not 'alpha' in kwargs.keys():
-                    _alpha=0.0
-                else:
-                    _alpha = kwargs['alpha']
-                if not 'epsilon' in kwargs.keys():
-                    _epsilon=0.1
-                else:
-                    _epsilon = kwargs['epsilon']
-                z = iterate_field_lit(_alpha,_obs_times)
-            case _:
-                z = np.zeros_like(self.J.T)
-
-
+        kernel = R.T @ R + n_alpha ** 2 * D.T @ D + n_beta ** 2 * J.T @ J
+        kernel2 = R.T @ R + n_alpha ** 2 * D.T @ D
+        ikernel = inv(kernel)
+        ikernel2 = inv(kernel2)
+        z = (1/facR) * (ikernel @ R.T @ obs_times
+                        - n_beta**2 * ikernel @ J.T @ J @ z0
+                        )
+        z2 = (1/facR) * (ikernel2 @ R.T @ obs_times)
+        Ans = 1000*np.concatenate([z0, 1/self.true_field.reshape(-1, 1), z, z2], axis=1)
         self.update_field(z)
 
+        return z
 
     def cost_function(self, rays, t):
         t_est = np.array([ray.calc_time(self)[0] for ray in rays])
@@ -419,7 +381,7 @@ class EstEnvironment(Environment):
         return norm(t_est - t)**2
 
     def gradient(self, t):
-        return self.J.T @ (self.J @ self.z - t)
+        return self.traveled_dists.T @ (self.traveled_dists @ self.z - t)
 
     def calc_metrics(self, t, s):
         self.est_time_mse.append(1000*self.cost_function(self.rays, t))

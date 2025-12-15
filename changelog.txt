@@ -22,3 +22,9 @@ v1.1.251114
 	Removed unnecessary files (from before OOP).
 v1.1.251215
 	Some big refactoring.
+v1.2.251215
+	Change to more practical implementation.
+	To implement:
+	  - Different ROV/streamer positioning;
+	  - Model layers below SOFAR as linear through the Munk model?;
+	  - Removal of proposed technique from sims, as it ties the literature.
