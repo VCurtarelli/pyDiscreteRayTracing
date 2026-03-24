@@ -70,7 +70,7 @@ class Ray:
                 tu = fm_tau[yu,xp]
             if 0 <= yd:
                 td = fm_tau[yd,xp]
-            times = [np.around(tr,4), np.around(tl,4), np.around(tu,4), np.around(td,4)]
+            times = [tr, tl, tu, td]
             direc = times.index(min(times))
             next_cell = [-1, -1]
             match direc:
@@ -85,13 +85,9 @@ class Ray:
             visited_cells.append(next_cell)
             xn = next_cell[1]
             yn = next_cell[0]
-            # if fm_tau[yn,xn] == 0:
-            #     dist = fm_tau[yp,xp] * (1/ffm_tau1[yp,xp])
-            # else:
-            #     dist = (fm_tau[yp,xp] - fm_tau[yn,xn]) * (1/ffm_tau1[yp,xp] + 1/ffm_tau1[yn,xn]) * 1/2
-            dist = 2*(fm_tau[yp,xp] - fm_tau[yn,xn]) / (slowness[yp,xp] + slowness[yn,xn])
-            dists[-1] += dist/2
-            dists.append(dist/2)
+            half_dist = (fm_tau[yp,xp] - fm_tau[yn,xn]) / (slowness[yp,xp] + slowness[yn,xn])
+            dists[-1] += half_dist
+            dists.append(half_dist)
 
             # plt.imshow(fm_tau)
             # plt.plot([cell[1] for cell in visited_cells], [cell[0] for cell in visited_cells], color='black')

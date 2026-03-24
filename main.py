@@ -1,10 +1,11 @@
+from fun_device_positioning import position_devices
+from fun_export_pos_devices import export_pos_devices
+from fun_show_figure import show_figure
 from py_libs import *
-from class_Ray import Ray
 from class_Environment import Environment, EstEnvironment
 import sys
-from fun_encode64 import encode64, mhash, encode16
+from fun_encode64 import mhash, encode16
 import time
-from fun_munk import munk
 
 
 class Timer:
@@ -39,11 +40,16 @@ np.set_printoptions(legacy='1.25',precision=2,linewidth=600,threshold=sys.maxsiz
 decimal.getcontext().prec = 2
 
 rms = lambda x: np.sqrt(np.mean(x**2))
-def main(num_cells_x, num_cells_y, width, height, pos_receivers_x, pos_receivers_y, pos_sources_x, pos_sources_y, mirrored,
-         alpha=0.05, beta=0.0, sigma=0.0, show_path=False, percent_rays=100):
-    timer = Timer()
+def main(num_cells_x, num_cells_y, width, height, dev_positioning, mirrored,
+         param_bas=(0.05,), param_trd=(0.05, 0.05, 0), param_spl=(0.05, 0), sigma=0.0, show_path=False, percent_rays=100):
+    pos_sources_x, pos_sources_y, pos_receivers_x, pos_receivers_y, pos_name = dev_positioning
+
+    ## ---------------------------
+    ## Hash and folder creation
+    ## ---------------------------
 
     parameters = {
+        'pos_name': pos_name,
         'num_cells_x': num_cells_x,
         'num_cells_y': num_cells_y,
         'width': width,
@@ -53,8 +59,9 @@ def main(num_cells_x, num_cells_y, width, height, pos_receivers_x, pos_receivers
         'pos_sources_x': pos_sources_x,
         'pos_sources_y': pos_sources_y,
         'mirrored': mirrored,
-        'alpha': alpha,
-        'beta': beta
+        'param_bas': param_bas,
+        'param_trd': param_trd,
+        'param_spl': param_spl,
     }
 
     hash_val = mhash(parameters.values())
@@ -63,268 +70,120 @@ def main(num_cells_x, num_cells_y, width, height, pos_receivers_x, pos_receivers
     os.makedirs(direc, exist_ok=True)
     os.makedirs(direc + code, exist_ok=True)
 
-    # timer.time('Folder and hash generation')
+    ## ---------------------------
+    ## Sources, receivers, and environments
+    ## ---------------------------
 
-    show_path = show_path
-    if mirrored:
-        pos_receivers_x = width - pos_receivers_x
-        pos_sources_x = width - pos_sources_x
     pos_receivers = list(set(zip(pos_receivers_x, pos_receivers_y)))
     pos_sources = list(set(zip(pos_sources_x, pos_sources_y)))
-    # pos_receivers = pos_receivers + pos_sources
-    # pos_sources = pos_receivers
+    export_pos_devices(pos_sources, pos_receivers, direc + code + '/', width, height)
 
-    export_pos_devices(pos_sources, pos_receivers, direc + code + '/')
+    obs_env = Environment(num_cells_x, num_cells_y, width, height, None, mirrored=False)
+    obs_env.generate_rays(pos_sources, pos_receivers)
 
-    # timer.time('Devices positioning')
-    obs_rays = []
-    for idx_s, source in enumerate(pos_sources):
-        for idx_r, receiver in enumerate(pos_receivers):
-            if source == receiver:
-                continue
-            obs_rays.append(Ray(source, receiver, 'observed', marker='x'))
+    est_envs = []
+    for field_name in ['Basic', 'Trade', 'Split']:
+        est_env = EstEnvironment(num_cells_x, num_cells_y, width, height, None, field_name=field_name)
+        est_env.generate_rays(pos_sources, pos_receivers)
+        est_envs.append(est_env)
 
-    obs_environment = Environment(num_cells_x, num_cells_y, width, height, obs_rays, mirrored=False)
-    obs_environment.update_rays()
+    ## ---------------------------
+    ## Other simulation parameters
+    ## ---------------------------
 
-    # timer.time('Create obs_environment')
-
-    obs_times = [ray.time for ray in obs_rays]
+    obs_times = [ray.time for ray in obs_env.rays]
     mean_time = np.mean(obs_times)
     rng = np.random.default_rng(0)
-    noise_times = list(sigma*mean_time*rng.random((len(obs_rays),)))
-    new_obs_times = [obs_times[i] + noise_times[i] for i in range(len(obs_rays))]
+    noise_times = list(sigma*mean_time*rng.random((len(obs_env.rays),)))
+    new_obs_times = [obs_times[i] + noise_times[i] for i in range(len(obs_env.rays))]
     obs_times = new_obs_times
     n_rays = len(obs_times)
-    print(n_rays)
+    model_slowness = 1/obs_env.vy.reshape(-1, 1)
 
     parameters['code'] = code
     parameters['n_rays'] = n_rays
     parameters_text = '\n'.join([key + ': ' + str(parameters[key]) for key in parameters.keys()])
     with open(direc + code + '/simulation parameters.txt', 'w') as f:
         f.write(parameters_text)
-    print(code)
 
-    # timer.time('Create obs_times')
+    # obs_env.plot_curves(obs_env.rays, pos_sources, pos_receivers)
+    # plt.show()
 
-    est_rays_lit = []
-    for idx, source in enumerate(pos_sources):
-        for jdx, receiver in enumerate(pos_receivers):
-            if source == receiver:
-                continue
-            ray = Ray(source, receiver, 'Literature', color=(180, 180, 0), marker='1')
-            est_rays_lit.append(ray)
-    est_environment_lit = EstEnvironment(num_cells_x, num_cells_y, width, height, est_rays_lit, field_name='Literature')
-    est_environment_lit.update_rays()
-
-    # timer.time("Create est_environment's")
-
-    # timer.show_delta_times()
-
-    # show_figure([(obs_environment, obs_rays),
-    #              (est_environment_lit, est_rays_lit),
-    #              (est_environment_lit, est_rays_lit)], pos_receivers, pos_sources, title='Rays Iterated',
-    #             show_path=show_path)
-
-    idx = 1
+    it_idx = 1
     vmin = np.inf
     vmax = -1
-    obs_environment.field_to_csv(0, export_params=True, code=code)
+    obs_env.field_to_csv(0, export_params=True, code=code)
     print('\n'*10)
     while True:
-        model_slowness = 1/obs_environment.vy.reshape(-1, 1)
-        est_environment_lit.iterate_field(est_rays_lit, n_rays, alpha=alpha, beta=beta, obs_times=obs_times,
-                      model_slowness=model_slowness, masking_depth=1000)
+        print("Iteration {}".format(it_idx))
+        ## ---------------------------
+        ## Iterate estimated fields
+        ## ---------------------------
+        est_envs[0].iterate_field(n_rays, alpha=param_bas[0], obs_times=obs_times,
+                                  mode='classic')
+        est_envs[1].iterate_field(n_rays, alpha=param_trd[0], beta=param_trd[1], obs_times=obs_times,
+                                  model_slowness=model_slowness, masking_depth=param_trd[2],
+                                  mode='trade')
+        est_envs[2].iterate_field(n_rays, alpha=param_spl[0], obs_times=obs_times,
+                                  model_slowness=model_slowness, masking_depth=param_spl[1],
+                                  mode='split')
         # print("FIELD ITERATED")
-        # show_figure([(obs_environment, obs_rays),
-        #              (est_environment_lit, est_rays_lit),
-        #              (est_environment_lit, est_rays_lit)], pos_receivers, pos_sources, title='Field Iterated',
-        #             show_path=show_path)
+
+        ## ---------------------------
+        ## Calc metrics #todo: reimplement: field_to_csv generation; vmin, vmax calculation
+        ## ---------------------------
+        for est_env in est_envs:
+            est_env.calc_metrics(obs_times, obs_env.field)
+
+        err_times = []
+        for est_env in est_envs:
+            est_env.field_to_csv(it_idx, code=code)
+            est_env.field_to_csv(it_idx,comp=obs_env.field, code=code,vmin=-20,vmax=20, export_params=True)
+            est_env.export_metrics(code=code)
+
+            err_times.append(est_env.cost_function(est_env.rays, obs_times))
 
 
-        est_environment_lit.update_rays()
-
-        # print("RAYS ITERATED")
-        est_environment_lit.calc_metrics(obs_times, obs_environment.field)
-
-
-        vmin = min(vmin,
-                   np.amin(np.abs(est_environment_lit.field - obs_environment.field)))
-        vmax = max(vmax,
-                   np.amax(np.abs(est_environment_lit.field - obs_environment.field)))
-
-        est_environment_lit.field_to_csv(idx, code=code)
-        est_environment_lit.field_to_csv(idx,comp=obs_environment.field, code=code)
-        obs_environment.field_to_csv(0, export_params=True, vmin=vmin, vmax=vmax, code=code)
-
-        est_environment_lit.export_metrics(code=code)
-
-        err_time_lit = est_environment_lit.cost_function(est_rays_lit, obs_times)
-        print('Travel-time error:')
-        print('\tLit. - {:.4f}ms'.format(1000*err_time_lit), 'out of {:.4f}s'.format(np.mean(obs_times)))
-        print('Field RMS error:')
-        print('\tLit. - {:.4f}m/s'.format(rms(est_environment_lit.field - obs_environment.field)), 'with σ = {:.4f}m/s'.format(np.std(obs_environment.field)))
-        print()
-        # print(idx, est_environment_lit.cost_function(est_rays_lit, obs_times), 0.01*float(np.mean(obs_times)))
-
-
-        if idx == 20:
+        if it_idx == 5:
             print("LIMIT REACHED - Code " + code)
             break
-        idx += 1
+        it_idx += 1
 
-    show_figure([(obs_environment, obs_rays),
-                 (est_environment_lit,est_rays_lit)], pos_receivers, pos_sources, title='Rays Iterated', show_path=show_path)
+    # err_time_bas = est_env_bas.cost_function(est_env_bas.rays, obs_times)
+    print('Travel-time error:')
+    for env_idx, est_env in enumerate(est_envs):
+        print('\t{}. - {:.4f}ms'.format(est_env.field_name[:3], 1000 * est_env.est_time_mse[-1]),
+              'out of {:.4f}s'.format(np.mean(obs_times)))
+    print('Field RMS error:')
+    for env_idx, est_env in enumerate(est_envs):
+        print('\t{}. - {:.4f}m/s'.format(est_env.field_name[:3], est_env.est_ssf_rms[-1]),
+              'with σ = {:.4f}m/s'.format(np.std(obs_env.field)))
+    print()
 
-
-def show_figure(pairs: list[tuple],
-                pos_receivers: list[tuple[float, float]],
-                pos_sources: list[tuple[float, float]],
-                show_path: bool = False,
-                legend: bool = False,
-                title: str = None):
-
-    fig, axs = plt.subplots(1, 3, sharey=True, sharex=True, figsize=(10,3))
-    axs = axs.reshape(-1,)
-    standard_field = pairs[0][0].field
-    vmin = np.amin(standard_field)
-    vmax = np.amax(standard_field)
-    all_rays = []
-    for idx, pair in enumerate(pairs):
-        environment, rays = pair
-        environment.plot_curves(rays, pos_sources, pos_receivers, axs[idx], show_path=show_path, legend=legend,
-                                vs=(vmin, vmax)
-                                )
-        axs[idx].set_xlabel(environment.field_name)
-        all_rays += rays
-    # pairs[0][0].plot_curves(all_rays, pos_sources, pos_receivers, axs[-1], cmap='magma')
-    vmin = min([np.amin(env.field - standard_field) for env, _ in pairs[1:]])
-    vmax = max([np.amax(env.field - standard_field) for env, _ in pairs[1:]])
-    for idx, pair in enumerate(pairs[1:]):
-        idx = idx+2
-        environment, rays = pair
-        environment.plot_curves(rays,pos_sources,pos_receivers,axs[idx], show_path=show_path,legend=legend,
-                                vs=(vmin, vmax), show_field=(environment.field - standard_field),
-                                cmap='magma')
-        axs[idx].set_xlabel('Comp. '+environment.field_name)
-    # axs[-1].set_xlabel('Comparison')
-    if title is not None:
-        fig.suptitle(title)
-    # fig.delaxes(axs[3])
-    manager = plt.get_current_fig_manager()
-    manager.window.wm_geometry("1200x400+50+200")
-    # manager.full_screen_toggle()
-    plt.show()
-
-
-def export_pos_devices(pos_sources, pos_receivers, direc):
-    header = 'x_pos,y_pos'
-
-    txt_sources = '\n'.join([header] + ['{},{}'.format(*pos) for pos in pos_sources])
-    txt_receivers = '\n'.join([header] + ['{},{}'.format(*pos) for pos in pos_receivers])
-
-    with open(direc + '/pos_sources.csv', 'w') as f:
-        f.write(txt_sources)
-        f.close()
-    with open(direc + '/pos_receivers.csv', 'w') as f:
-        f.write(txt_receivers)
-        f.close()
-    pass
+    # show_figure([obs_env] + est_envs, pos_receivers, pos_sources, title='Field Iterated',
+    #             show_path=show_path, comp_field=True)
 
 
 if __name__ == '__main__':
-    nx = 10
-    ny = 30
+    nx = 43
+    ny = 50
     w = 2000
     h = 2000
-    ns = 10
-    nr = 10
-    nr_ = 5
+    ns = 15
+    nr = 15
+    n_travels = 5
+    ofs = 0
+    params = nx, ny, w, h, ns, nr, ofs, n_travels
 
-    sources = receivers = 'mixed'
+    for device_pos in range(4):
+    # for device_pos in [2]:
+        dev_positioning = position_devices(device_pos, params)
 
-    pos_sx = []
-    pos_sy = []
-    pos_rx = []
-    pos_ry = []
+        p_bas = [0.95]
+        p_trd = [0.85, 0.45, 1000]
+        p_spl = [0.85, 1000]
+        sig = 0.000
 
-
-    sr_method = 'new'
-    if sr_method == 'new':
-        ofs = 0
-        pos_sx.append(np.linspace(ofs, nx - 1 - ofs, ns))
-        pos_sy.append(np.array([ofs for _ in range(ns)]))
-        #
-        v_center = 4
-        v_amp = 3
-        n_osc = 2
-        pos_rx.append(np.linspace(ofs, nx - 1 - ofs, nr))
-        pos_ry.append((ny-v_center) + v_amp*np.sin(2*pi*n_osc*np.linspace(0, 1, nr)))
-
-        print(pos_ry)
-        # pos_rx.append(np.linspace(ofs, nx - 1 - ofs, nr))
-        # pos_ry.append(np.array([ny - 1 - ofs for _ in range(nr)]))
-        #
-
-        # pos_sx.append(np.array([ofs for _ in range(nr_+2)])[1:-1])
-        # pos_sy.append(np.linspace(ofs, ny - 1 - ofs, nr_+2)[1:-1])
-        # #
-        # pos_rx.append(np.array([nx-1 - ofs for _ in range(nr_+2)])[1:-1])
-        # pos_ry.append(np.linspace(ofs, ny - 1 - ofs, nr_+2)[1:-1])
-
-
-        pos_sx = np.concatenate(pos_sx)
-        pos_sy = np.concatenate(pos_sy)
-        pos_rx = np.concatenate(pos_rx)
-        pos_ry = np.concatenate(pos_ry)
-
-        rng = np.random.default_rng(2)
-        cw = w / nx
-        ch = h / ny
-        pos_sx = cw * (0.5 + np.around(pos_sx))
-        pos_sy = ch * (0.5 + np.around(pos_sy))
-        pos_rx = cw * (0.5 + np.around(pos_rx))
-        pos_ry = ch * (0.5 + np.around(pos_ry))
-    else:
-        if sources == 'mixed':
-            ns = int(np.ceil(ns/2))
-        if receivers == 'mixed':
-            nr = int(np.ceil(nr/2))
-        if sources in ('horizontal', 'mixed'):
-            pos_sx.append(np.linspace(0.15*w, 0.95*w, ns))
-            pos_sy.append(np.array([0.05*h for _ in range(ns)]))
-        if sources in ('vertical', 'mixed'):
-            pos_sx.append(np.array([0.95*w for _ in range(ns)]))
-            pos_sy.append(np.linspace(0.15*h, 0.95*h, ns))
-
-        if receivers in ('horizontal', 'mixed'):
-            pos_rx.append(np.linspace(0.05*w, 0.8*w, nr))
-            pos_ry.append(np.array([0.95*h for _ in range(nr)]))
-        if receivers in ('vertical', 'mixed'):
-            pos_rx.append(np.array([0.05*w for _ in range(nr)]))
-            pos_ry.append(np.linspace(0.05*h, 0.8*h, nr))
-
-        ns = len(pos_sx)
-        nr = len(pos_rx)
-
-        pos_sx = np.concatenate(pos_sx)
-        pos_sy = np.concatenate(pos_sy)
-        pos_rx = np.concatenate(pos_rx)
-        pos_ry = np.concatenate(pos_ry)
-
-        rng = np.random.default_rng(2)
-        cw = w/nx
-        ch = h/ny
-        pos_sx = cw/2 + cw*np.floor((pos_sx + rng.normal(0, 1, pos_sx.shape) * 0.005 * w)/cw)
-        pos_sy = ch/2 + ch*np.floor((pos_sy + rng.normal(0, 1, pos_sy.shape) * 0.005 * h)/ch)
-        pos_rx = cw/2 + cw*np.floor((pos_rx + rng.normal(0, 1, pos_rx.shape) * 0.005 * w)/cw)
-        pos_ry = ch/2 + ch*np.floor((pos_ry + rng.normal(0, 1, pos_ry.shape) * 0.005 * h)/ch)
-    pos_sx, pos_sy = tuple(np.array(list(set(zip(list(pos_sx), list(pos_sy))))).T)
-    pos_rx, pos_ry = tuple(np.array(list(set(zip(list(pos_rx), list(pos_ry))))).T)
-    alp = 0.995
-    eps = 0.0000
-    sig = 0.000
-
-    np.set_printoptions(legacy='1.25', precision=6, linewidth=320)
-    decimal.getcontext().prec = 2
-    main(nx, ny, w, h, pos_rx, pos_ry, pos_sx, pos_sy, False, alp, eps, sig, show_path=False)
+        np.set_printoptions(legacy='1.25', precision=6, linewidth=320)
+        decimal.getcontext().prec = 2
+        main(nx, ny, w, h, dev_positioning, False, p_bas, p_trd, p_spl, sig, show_path=False)

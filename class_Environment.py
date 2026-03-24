@@ -1,6 +1,9 @@
 from fun_munk import munk
 from py_libs import *
 from scipy.interpolate import RegularGridInterpolator
+from class_Ray import Ray
+from matplotlib.colors import hsv_to_rgb
+import random
 
 rms = lambda x: np.sqrt(np.mean(x**2))
 class Environment:
@@ -34,6 +37,22 @@ class Environment:
         self.field_name = field_name
         self.rays = rays
 
+    def generate_rays(self, pos_sources, pos_receivers, color=(180, 180, 0), marker='1'):
+        rays = []
+        for idx, source in enumerate(pos_sources):
+            for jdx, receiver in enumerate(pos_receivers):
+                if source == receiver:
+                    continue
+                ray = Ray(source, receiver, self.field_name, color=color, marker=marker)
+                rays.append(ray)
+        n_rays = len(rays)
+        # random.shuffle(rays)
+        for idx, ray in enumerate(rays):
+            ray.color = hsv_to_rgb((idx/n_rays, 0.7, 0.7))
+        self.rays = rays
+        self.update_rays()
+        return rays
+
 
     def generate_field(self):
         width = self.width
@@ -42,15 +61,13 @@ class Environment:
         x = self.grid_x
         y = self.grid_y
         X, Y = np.meshgrid(x, y)  # X-Y plane grid
-        X = X / width
-        Y = Y / height
+        X = (X - np.amin(X)) / (np.amax(X) - np.amin(X))
+        Y = (Y - np.amin(Y)) / (np.amax(Y) - np.amin(Y))
         epsilon=0.00737
-        vY = munk(epsilon, height, Y)
-        vX = 5*(2*X-1)
-        velocity_field = vY + vX
+        velocity_field = munk(epsilon, height, Y, X)
 
-        self.vx = vX
-        self.vy = vY
+        self.vy = munk(epsilon, height, Y)
+        self.vx = velocity_field - self.vy
 
         return velocity_field
 
@@ -66,6 +83,7 @@ class Environment:
             fig, ax = plt.subplots()
         if show_field is None:
             show_field = field
+
         if vs is None:
             # vmin = np.sort(show_field.reshape(-1,))[int(0.1*show_field.size)]
             # vmax = np.sort(show_field.reshape(-1,))[int(0.9*show_field.size)]
@@ -84,46 +102,32 @@ class Environment:
                 background = np.ones_like(show_field)
                 background[alpha == 0] = 0
                 ax.imshow(background, extent=(0, width, 0, height), cmap='gray', vmin=0,vmax=1)
-            pcm = ax.imshow(show_field, extent=(0, width, 0, height), alpha=alpha,
+            pcm = ax.imshow(show_field[::-1], extent=(0, width, 0, height), alpha=alpha,
                             vmin=vmin, vmax=vmax,
                             cmap=cmap)
             plt.colorbar(pcm, ax=ax)
-            # ax.imshow(np.ones_like(show_field), alpha=alpha, extent=(0, width, 0, height), cmap='gray')
-            # ax.vlines(x=np.linspace(0, width, num_cells_x+1), ymin=0, ymax=height, color='gray', linestyle='dashed',
-            #           linewidth=1)
-            # ax.hlines(y=np.linspace(0, height, num_cells_y+1), xmin=0, xmax=width, color='gray', linestyle='dashed',
-            #           linewidth=1)
-        ray_angles = []
-
-        # for ray in rays:
-        #     x_pos = [ray.source[0], ray.receiver[0]]
-        #     y_pos = [ray.source[1], ray.receiver[1]]
-        #     ax.plot(x_pos, y_pos, color=ray.color * 0.3, marker='o')
-
-        if show_path:
-            for ray in rays:
-                if self.method == 'old':
-                    for path in ray.paths:
-                        path = np.array(path)
-                        ax.plot(path[:, 0], path[:, 1], color=(0.5,0.5,0.5), alpha=0.5)
 
         for ray in rays:
             path = np.array(ray.path)
-            ax.plot(path[:, 0], path[:, 1],
+            ax.plot(path[:, 0], self.height - path[:, 1],
                     color=ray.color*(1 if ray.converged else 0.5),label=np.around(ray.time, 4), #marker=ray.marker,
-                    alpha=0.1)
+                    alpha=0.4)
 
         for receiver in receivers:
-            ax.plot(receiver[0], receiver[1], marker='x', markerfacecolor='blue', markersize=6,
+            ax.plot(receiver[0], self.height - receiver[1], marker='x', markerfacecolor='blue', markersize=6,
                         markeredgecolor='blue', markeredgewidth=3)
         for source in sources:
-            ax.plot(source[0], source[1], marker='+', markerfacecolor='red', markersize=6,
+            ax.plot(source[0], self.height - source[1], marker='+', markerfacecolor='red', markersize=6,
                         markeredgecolor='red', markeredgewidth=2)
 
 
         # final plotting setup
         ax.set_xlim((-.05 * width, width + .05 * width))
         ax.set_ylim((-.05 * height, height + .05 * height))
+
+        ax.plot([0, width], [500, 500], 'k')
+        ax.plot([0, width], [1000, 1000], 'k')
+
         if legend:
             ax.legend(loc='upper left')
 
@@ -132,7 +136,7 @@ class Environment:
         grid_x = self.grid_x - self.grid_x[0]
         grid_y = self.grid_y - self.grid_y[0]
         if comp is not None:
-            field = np.abs(field - comp)
+            field = field - comp
         txt = ['y,x,val']
         for y_idx in range(self.cells_ny+1):
             if y_idx == self.cells_ny:
@@ -158,7 +162,7 @@ class Environment:
 
         if export_params:
             filename = code + '/' + 'params'
-            if vmin is not None or vmax is not None:
+            if comp is not None:
                 filename += '_comp'
             if vmin is None:
                 vmin = 5*np.floor((np.amin(field) - 0.2*np.std(field))/5)
@@ -242,7 +246,7 @@ class Environment:
 class EstEnvironment(Environment):
     def __init__(self, num_cells_x, num_cells_y, width, height, rays, initial_value=1100, field_name='Estimate'):
         super().__init__(num_cells_x, num_cells_y, width, height, rays)
-        self.update_field((1/initial_value)*np.ones_like(self.field))
+        self.update_field((1/initial_value)*np.ones([self.field.size, 1]))
         self.laplacian_mtx = None
         self.blur_mtx = None
         self.depth_mask = None
@@ -317,6 +321,7 @@ class EstEnvironment(Environment):
             return None
         J = np.zeros_like(self.field)
         J[np.arange(self.cells_ny)>depth/self.cell_height, :] = 1
+        # J[0, :] = 1
         J = J.reshape(-1,)
         J = np.diagflat(J)
         self.depth_mask = J
@@ -341,36 +346,103 @@ class EstEnvironment(Environment):
         self.field = 1/z.reshape(self.cells_ny, -1)
         self.interp = RegularGridInterpolator((self.grid_y, self.grid_x), self.field, method=self.interp_method)
 
-    def iterate_field(self, rays, n_rays, alpha=0.01, beta=0.01, obs_times=0,
-                      model_slowness=None, masking_depth=None):
+    def iterate_field(self, n_rays, alpha=0.01, beta=0.01, obs_times=0,
+                      model_slowness=None, masking_depth=None, mode='classic'):
+        def iterate_field_classic(_obs_times, _alpha):
+            _R = self.traveled_dists
+            _D = self.laplacian_mtx
+            _obs_times = np.array(_obs_times).reshape(-1, 1)
+            _n_alpha = _alpha / np.sqrt(1 - _alpha ** 2)
+            _facR = 1
+            _facD = 1
+            _facR = np.amax(svd(_R)[1])
+            _facD = np.amax(svd(_D)[1])
+            _R = _R / _facR
+            _D = _D / _facD
+
+            _kernel = _R.T @ _R + _n_alpha ** 2 * _D.T @ _D
+            _ikernel = inv(_kernel)
+
+            _z = (1/_facR) * (_ikernel @ _R.T @ _obs_times)
+            return _z
+
+        def iterate_field_trade(_obs_times, _model_slowness, _alpha, _beta, _masking_depth):
+            if _model_slowness is None:
+                _model_slowness = np.ones_like(self.z) * 1 / 1500
+            _R = self.traveled_dists
+            _D = self.laplacian_mtx
+            self.generate_J(depth=_masking_depth)
+            _J = self.depth_mask
+            _z0 = model_slowness
+            _obs_times = np.array(_obs_times).reshape(-1, 1)
+
+            _n_alpha = _alpha / np.sqrt(1 - _alpha ** 2)
+            _n_beta = _beta / np.sqrt(1 - _beta ** 2)
+            _facR = 1
+            _facD = 1
+            _facJ = 1
+            _facR = np.amax(svd(_R)[1])
+            _facD = np.amax(svd(_D)[1])
+            _facJ = np.amax(svd(_J)[1])
+            _R = _R / _facR
+            _D = _D / _facD
+            _J = _J / _facJ
+
+            _kernel = _R.T @ _R + _n_alpha ** 2 * _D.T @ _D + _n_beta ** 2 * _J.T @ _J
+            _ikernel = inv(_kernel)
+            _z = _ikernel @ ((1 / _facR) * _R.T @ _obs_times
+                            + _n_beta ** 2 * _J.T @ _J @ _z0
+                            )
+            return _z
+
+        def iterate_field_split(_obs_times, _model_slowness, _alpha, _masking_depth):
+            if _model_slowness is None:
+                _model_slowness = np.ones_like(self.z) * 1 / 1500
+            _R = self.traveled_dists
+            _D = self.laplacian_mtx
+            _obs_times = np.array(_obs_times).reshape(-1, 1)
+            _n_alpha = _alpha / np.sqrt(1 - _alpha ** 2)
+            _facR = 1
+            _facD = 1
+            _facR = np.amax(svd(_R)[1])
+            _facD = np.amax(svd(_D)[1])
+            _R = _R / _facR
+            _D = _D / _facD
+
+            _masking_idx = int(_masking_depth / self.height * self.cells_n)
+
+            _R1 = _R[:, :_masking_idx]
+            _R2 = _R[:, _masking_idx:]
+            _D1 = _D[:, :_masking_idx]
+            _D2 = _D[:, _masking_idx:]
+            _z2 = _model_slowness[_masking_idx:].reshape(-1, 1)
+
+            _kernel = _R1.T @ _R1 + _n_alpha ** 2 * (_D1.T @ _D1)
+            _ikernel = inv(_kernel)
+
+            _z1 = _ikernel @ ((1/_facR) * _R1.T @ _obs_times
+                              - _R1.T @ _R2 @ _z2
+                              - _n_alpha ** 2 * _D1.T @ _D2 @ _z2)
+
+            _z = np.concatenate((_z1, _z2), axis=0)
+            return _z
+        rays = self.rays
         self.update_R(rays, n_rays)
-        if model_slowness is None:
-            model_slowness = np.ones_like(self.z) * 1 / 1500
-        R = self.traveled_dists
-        D = self.laplacian_mtx
-        B = self.blur_mtx
-        self.generate_J(depth=masking_depth)
-        J = self.depth_mask
-        z0 = model_slowness
-        obs_times = np.array(obs_times).reshape(-1, 1)
 
-        n_alpha = alpha / np.sqrt(1 - alpha ** 2)
-        n_beta = beta / np.sqrt(1 - beta ** 2)
-        facR = 1
-        facR = np.amax(svd(R)[1])
-        R = R / facR
-        D = D / np.amax(svd(D)[1])
-        J = J / np.amax(svd(J)[1])
+        z = self.z
 
-        kernel = R.T @ R + n_alpha ** 2 * D.T @ D + n_beta ** 2 * J.T @ J
-        kernel2 = R.T @ R + n_alpha ** 2 * D.T @ D
-        ikernel = inv(kernel)
-        ikernel2 = inv(kernel2)
-        z = (1/facR) * (ikernel @ R.T @ obs_times
-                        - n_beta**2 * ikernel @ J.T @ J @ z0
-                        )
-        z2 = (1/facR) * (ikernel2 @ R.T @ obs_times)
-        Ans = 1000*np.concatenate([z0, 1/self.true_field.reshape(-1, 1), z, z2], axis=1)
+        if mode is None:
+            mode = self.field_name.lower()
+        match mode:
+            case 'classic' | 'basic' | 'standard':
+                z = iterate_field_classic(obs_times, alpha)
+            case 'trade' | 'tradeoff' | 'dual':
+                z = iterate_field_trade(obs_times, model_slowness, alpha, beta, masking_depth)
+            case 'split':
+                z = iterate_field_split(obs_times, model_slowness, alpha, masking_depth)
+            case _:
+                raise NotImplementedError
+
         self.update_field(z)
 
         return z

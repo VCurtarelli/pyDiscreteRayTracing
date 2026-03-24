@@ -28,3 +28,7 @@ v1.2.251215
 	  - Different ROV/streamer positioning;
 	  - Model layers below SOFAR as linear through the Munk model?;
 	  - Removal of proposed technique from sims, as it ties the literature.
+v1.2.260324
+	Great improvements in code.
+	Large refactoring and changes in implementation.
+	
