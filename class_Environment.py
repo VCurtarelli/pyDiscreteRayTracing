@@ -7,7 +7,8 @@ import random
 
 rms = lambda x: np.sqrt(np.mean(x**2))
 class Environment:
-    def __init__(self, num_cells_x, num_cells_y, width, height, rays, field_name='Observed', mirrored=False):
+    def __init__(self, num_cells_x, num_cells_y, width, height, field_name='Observed'):
+        # Initiate input parameters
         self.cells_nx = num_cells_x
         self.cells_ny = num_cells_y
         self.width = width
@@ -17,6 +18,7 @@ class Environment:
         self.cell_width = width/num_cells_x
         self.cell_height = height/num_cells_y
 
+        # Initiate grids, velocities, and rays
         self.grid_x = self.cell_width*(0.5 + np.arange(num_cells_x))
         self.grid_y = self.cell_height*(0.5 + np.arange(num_cells_y))
         self.vx = np.zeros([num_cells_y, num_cells_x])
@@ -26,18 +28,11 @@ class Environment:
         self.field = self.generate_field()
         self.true_field = np.copy(self.field)
 
-        if mirrored:
-            self.field = np.fliplr(self.field)
-        self.method = 'new'
-        if self.method == 'old':
-            self.interp_method = 'cubic'
-        else:
-            self.interp_method = 'nearest'
-        self.interp = RegularGridInterpolator((self.grid_y, self.grid_x), self.field, method=self.interp_method)
         self.field_name = field_name
-        self.rays = rays
+        self.rays = None
 
     def generate_rays(self, pos_sources, pos_receivers, color=(180, 180, 0), marker='1'):
+        # Generates rays from source to receiver as Ray class
         rays = []
         for idx, source in enumerate(pos_sources):
             for jdx, receiver in enumerate(pos_receivers):
@@ -46,7 +41,6 @@ class Environment:
                 ray = Ray(source, receiver, self.field_name, color=color, marker=marker)
                 rays.append(ray)
         n_rays = len(rays)
-        # random.shuffle(rays)
         for idx, ray in enumerate(rays):
             ray.color = hsv_to_rgb((idx/n_rays, 0.7, 0.7))
         self.rays = rays
@@ -54,30 +48,34 @@ class Environment:
         return rays
 
 
-    def generate_field(self):
+    def generate_field(self, mode='munk'):
         width = self.width
         height = self.height
 
+        # Generate mesh grid for X and Y directions
         x = self.grid_x
         y = self.grid_y
         X, Y = np.meshgrid(x, y)  # X-Y plane grid
         X = (X - np.amin(X)) / (np.amax(X) - np.amin(X))
         Y = (Y - np.amin(Y)) / (np.amax(Y) - np.amin(Y))
-        epsilon=0.00737
-        velocity_field = munk(epsilon, height, Y, X)
 
-        self.vy = munk(epsilon, height, Y)
-        self.vx = velocity_field - self.vy
+        if mode == 'munk':
+            epsilon=0.00737
+            velocity_field = munk(epsilon, height, Y, X)
+
+            self.vy = munk(epsilon, height, Y)
+            self.vx = velocity_field - self.vy
+        else:
+            raise NotImplementedError("Needs to implement other types of field")
 
         return velocity_field
 
     def plot_curves(self, rays, sources, receivers,
                 ax=None, show_field=None, show_path=False, legend=False, vs=None, cmap=None):
+        # Function for plotting the heatmaps
         width = self.width
         height = self.height
         field = self.field
-        num_cells_x = self.cells_nx
-        num_cells_y = self.cells_ny
 
         if ax is None:
             fig, ax = plt.subplots()
@@ -85,8 +83,6 @@ class Environment:
             show_field = field
 
         if vs is None:
-            # vmin = np.sort(show_field.reshape(-1,))[int(0.1*show_field.size)]
-            # vmax = np.sort(show_field.reshape(-1,))[int(0.9*show_field.size)]
             vmin = np.amin(show_field)
             vmax = np.amax(show_field)
             vs = (vmin, vmax)
@@ -132,6 +128,7 @@ class Environment:
             ax.legend(loc='upper left')
 
     def field_to_csv(self, idx, direc='Results/', export_params=False, comp=None, vmin=None, vmax=None, code=''):
+        # Export field to a csv (ordered to follow own LaTeX formatting for heatmaps)
         field = self.field
         grid_x = self.grid_x - self.grid_x[0]
         grid_y = self.grid_y - self.grid_y[0]
@@ -184,79 +181,28 @@ class Environment:
                 f.write(txt)
                 f.close()
 
-    def calc_grad(self, pos_a_x, pos_a_y, angle):
-        num_cells_x = self.cells_nx
-        num_cells_y = self.cells_ny
-        cell_width = self.cell_width
-        cell_height = self.cell_height
-        x_interp = cell_width*(0.5 + np.arange(num_cells_x))
-        y_interp = cell_height*(0.5 + np.arange(num_cells_y))
-        # self.interp = RegularGridInterpolator((self.grid_y, self.grid_x), self.field, method='cubic')
-        x_p = np.clip(pos_a_x, x_interp[0], x_interp[-1])
-        y_p = np.clip(pos_a_y, y_interp[0], y_interp[-1])
-        x_l = np.clip(x_p - 0.001*min(cell_width,cell_height), x_interp[0], x_interp[-1])
-        x_r = np.clip(x_p + 0.001*min(cell_width,cell_height), x_interp[0], x_interp[-1])
-        y_u = np.clip(y_p - 0.001*min(cell_width,cell_height), y_interp[0], y_interp[-1])
-        y_d = np.clip(y_p + 0.001*min(cell_width,cell_height), y_interp[0], y_interp[-1])
-        positions = np.array([[y_p, x_r],
-                              [y_p, x_l],
-                              [y_u, x_p],
-                              [y_d, x_p]])
-        try:
-            vels = self.interp(positions)
-        except ValueError:
-            vels = np.zeros(positions.shape[0])
-        grad_x = ((vels[0] - vels[1]) / norm(positions[0] - positions[1])).item()
-        grad_y = ((vels[2] - vels[3]) / norm(positions[2] - positions[3])).item()
-        dir_grad = np.angle(grad_x + 1j*grad_y)
-        if np.cos(angle - dir_grad) < 0:
-            dir_grad = (dir_grad + pi + 2 * pi) % (2 * pi)
-        # mag_grad = 5*np.sqrt(grad_x ** 2 + grad_y ** 2)
-        mag_grad = 0.25
-
-        dx_a = np.clip(x_p - mag_grad*np.cos(angle)*min(cell_width,cell_height), x_interp[0], x_interp[-1])
-        dx_b = np.clip(x_p + mag_grad*np.cos(angle)*min(cell_width,cell_height), x_interp[0], x_interp[-1])
-        dy_a = np.clip(y_p - mag_grad*np.sin(angle)*min(cell_width,cell_height), y_interp[0], y_interp[-1])
-        dy_b = np.clip(y_p + mag_grad*np.sin(angle)*min(cell_width,cell_height), y_interp[0], y_interp[-1])
-        positions = np.array([[dy_a, dx_a],
-                              [dy_b, dx_b]])
-
-        vels = self.interp(positions)
-        Va = vels[0].item()
-        Vb = vels[1].item()
-
-        return mag_grad, dir_grad, Va, Vb
-
     def update_rays(self):
+        # Updates the rays path and travel-time given the current SSF
         for ray in self.rays:
             ray.calc_path(self)
             ray.calc_time(self)
 
-    def update_R(self, rays, n_rays):
-        num_cells = self.cells_n
-        R = np.zeros([n_rays, num_cells])
-        for idx, ray in enumerate(rays):
-            ray.calc_path(self)
-            _, Lengths = ray.calc_time(self)
-            R[idx, :] = Lengths.reshape(-1,)
-        self.traveled_dists = R
-
-        return R
 
 class EstEnvironment(Environment):
     def __init__(self, num_cells_x, num_cells_y, width, height, rays, initial_value=1100, field_name='Estimate'):
+        # Initiate superclass
         super().__init__(num_cells_x, num_cells_y, width, height, rays)
-        self.update_field((1/initial_value)*np.ones([self.field.size, 1]))
-        self.laplacian_mtx = None
-        self.blur_mtx = None
-        self.depth_mask = None
-        self.generate_D()
-        self.generate_B(sigma=0.00)
         self.field_name = field_name
+
+        # Update field to be uniform, generate laplacian (D) and blur (B) matrices
+        self.slowness_vector = self.update_field((1 / initial_value) * np.ones([self.field.size, 1]))
+        self.depth_mask = None
+        self.laplacian_mtx = self.generate_laplacian()
+        self.blur_mtx = self.generate_blur(sigma=0.00)
         self.est_time_mse = []
         self.est_ssf_rms = []
 
-    def generate_D(self):
+    def generate_laplacian(self):
         num_cells_x = self.cells_nx
         num_cells_y = self.cells_ny
         num_cells = self.cells_n
@@ -267,8 +213,6 @@ class EstEnvironment(Environment):
         for i in range(num_cells_x):
             u = np.clip(i + 1, 0, num_cells_x - 1)
             d = np.clip(i - 1, 0, num_cells_x - 1)
-            # laplacian_block[u, i] = 1
-            # laplacian_block[d, i] = 1
             laplacian_block[i, u] = 1
             laplacian_block[i, d] = 1
             laplacian_block[i, i] = -4
@@ -285,8 +229,9 @@ class EstEnvironment(Environment):
             D_laplacian[i, :] = -D_laplacian[i, :] / np.abs(D_laplacian[i,i])
             pass
         self.laplacian_mtx = D_laplacian
+        return D_laplacian
 
-    def generate_B(self, sigma=1.):
+    def generate_blur(self, sigma=1.):
         num_cells_x = self.cells_nx
         num_cells_y = self.cells_ny
         num_cells = self.cells_n
@@ -314,51 +259,56 @@ class EstEnvironment(Environment):
                 blur[i * num_cells_x:(i + 1) * num_cells_x, (i - 1) * num_cells_x:i * num_cells_x] = block_B
             blur[i * num_cells_x:(i + 1) * num_cells_x, i * num_cells_x:(i + 1) * num_cells_x] = block_A
         self.blur_mtx = blur
+        return blur
 
-    def generate_J(self, depth=1000):
+    def generate_mask(self, depth=1000):
         if depth is None:
             self.depth_mask = np.zeros([self.field.size,self.field.size])
             return None
-        J = np.zeros_like(self.field)
-        J[np.arange(self.cells_ny)>depth/self.cell_height, :] = 1
+        depth_mask_mtx = np.zeros_like(self.field)
+        depth_mask_mtx[np.arange(self.cells_ny)>depth/self.cell_height, :] = 1
         # J[0, :] = 1
-        J = J.reshape(-1,)
-        J = np.diagflat(J)
-        self.depth_mask = J
+        depth_mask_mtx = depth_mask_mtx.reshape(-1,)
+        depth_mask_mtx = np.diagflat(depth_mask_mtx)
+        self.depth_mask = depth_mask_mtx
 
         return None
 
-
-    def update_R(self, rays, n_rays):
+    def update_traveled_dists(self, rays, n_rays):
+        # Updates traveled distances matrix (R)
         num_cells = self.cells_n
-        R = np.zeros([n_rays, num_cells])
+        traveled_dists = np.zeros([n_rays, num_cells])
         for idx, ray in enumerate(rays):
             ray.calc_path(self)
             _, Lengths = ray.calc_time(self)
-            R[idx, :] = Lengths.reshape(-1,)
-        self.traveled_dists = R
+            traveled_dists[idx, :] = Lengths.reshape(-1,)
+        self.traveled_dists = traveled_dists
 
-        return R
+        return traveled_dists
 
     def update_field(self, z):
         z[z <= 0] = np.median(z[z > 0])
-        self.z = z
+        self.slowness_vector = z
         self.field = 1/z.reshape(self.cells_ny, -1)
-        self.interp = RegularGridInterpolator((self.grid_y, self.grid_x), self.field, method=self.interp_method)
+        return z
 
     def iterate_field(self, n_rays, alpha=0.01, beta=0.01, obs_times=0,
                       model_slowness=None, masking_depth=None, mode='classic'):
+        # Iterate field (based on which method is to be used)
+        # TODO: Here is where other iteration methods are to be implemented
+
+        def normalize(mat):
+            norm_fac = np.linalg.norm(mat, ord=2)
+            norm_mat = mat/norm_fac
+            return norm_mat, norm_fac
+
         def iterate_field_classic(_obs_times, _alpha):
             _R = self.traveled_dists
             _D = self.laplacian_mtx
             _obs_times = np.array(_obs_times).reshape(-1, 1)
             _n_alpha = _alpha / np.sqrt(1 - _alpha ** 2)
-            _facR = 1
-            _facD = 1
-            _facR = np.amax(svd(_R)[1])
-            _facD = np.amax(svd(_D)[1])
-            _R = _R / _facR
-            _D = _D / _facD
+            _R, _facR = normalize(_R)
+            _D, _FacD = normalize(_D)
 
             _kernel = _R.T @ _R + _n_alpha ** 2 * _D.T @ _D
             _ikernel = inv(_kernel)
@@ -368,25 +318,19 @@ class EstEnvironment(Environment):
 
         def iterate_field_trade(_obs_times, _model_slowness, _alpha, _beta, _masking_depth):
             if _model_slowness is None:
-                _model_slowness = np.ones_like(self.z) * 1 / 1500
+                _model_slowness = np.ones_like(self.slowness_vector) * 1 / 1500
             _R = self.traveled_dists
             _D = self.laplacian_mtx
-            self.generate_J(depth=_masking_depth)
+            self.generate_mask(depth=_masking_depth)
             _J = self.depth_mask
             _z0 = model_slowness
             _obs_times = np.array(_obs_times).reshape(-1, 1)
 
             _n_alpha = _alpha / np.sqrt(1 - _alpha ** 2)
             _n_beta = _beta / np.sqrt(1 - _beta ** 2)
-            _facR = 1
-            _facD = 1
-            _facJ = 1
-            _facR = np.amax(svd(_R)[1])
-            _facD = np.amax(svd(_D)[1])
-            _facJ = np.amax(svd(_J)[1])
-            _R = _R / _facR
-            _D = _D / _facD
-            _J = _J / _facJ
+            _R, _facR = normalize(_R)
+            _D, _FacD = normalize(_D)
+            _J, _FacJ = normalize(_J)
 
             _kernel = _R.T @ _R + _n_alpha ** 2 * _D.T @ _D + _n_beta ** 2 * _J.T @ _J
             _ikernel = inv(_kernel)
@@ -397,17 +341,13 @@ class EstEnvironment(Environment):
 
         def iterate_field_split(_obs_times, _model_slowness, _alpha, _masking_depth):
             if _model_slowness is None:
-                _model_slowness = np.ones_like(self.z) * 1 / 1500
+                _model_slowness = np.ones_like(self.slowness_vector) * 1 / 1500
             _R = self.traveled_dists
             _D = self.laplacian_mtx
             _obs_times = np.array(_obs_times).reshape(-1, 1)
             _n_alpha = _alpha / np.sqrt(1 - _alpha ** 2)
-            _facR = 1
-            _facD = 1
-            _facR = np.amax(svd(_R)[1])
-            _facD = np.amax(svd(_D)[1])
-            _R = _R / _facR
-            _D = _D / _facD
+            _R, _facR = normalize(_R)
+            _D, _FacD = normalize(_D)
 
             _masking_idx = int(_masking_depth / self.height * self.cells_n)
 
@@ -427,9 +367,9 @@ class EstEnvironment(Environment):
             _z = np.concatenate((_z1, _z2), axis=0)
             return _z
         rays = self.rays
-        self.update_R(rays, n_rays)
+        self.update_traveled_dists(rays, n_rays)
 
-        z = self.z
+        z = self.slowness_vector
 
         if mode is None:
             mode = self.field_name.lower()
@@ -441,25 +381,30 @@ class EstEnvironment(Environment):
             case 'split':
                 z = iterate_field_split(obs_times, model_slowness, alpha, masking_depth)
             case _:
-                raise NotImplementedError
+                raise NotImplementedError("The iteration mode {} is not implemented.".format(mode))
 
         self.update_field(z)
 
         return z
 
     def cost_function(self, rays, t):
+        # Cost function to be minimized
         t_est = np.array([ray.calc_time(self)[0] for ray in rays])
         t = np.array(t)
         return norm(t_est - t)**2
 
     def gradient(self, t):
-        return self.traveled_dists.T @ (self.traveled_dists @ self.z - t)
+        # Gradient of cost function
+        return self.traveled_dists.T @ (self.traveled_dists @ self.slowness_vector - t)
 
     def calc_metrics(self, t, s):
+        # Calculates metrics
+        # TODO: Implement other metrics maybe?
         self.est_time_mse.append(1000*self.cost_function(self.rays, t))
         self.est_ssf_rms.append(rms(self.field - s))
 
     def export_metrics(self, direc='Results/', code=''):
+        # Exports metrics as .csv file
         est_time_txt = ['x,y']
         est_ssf_txt = ['x,y']
 

@@ -31,4 +31,6 @@ v1.2.251215
 v1.2.260324
 	Great improvements in code.
 	Large refactoring and changes in implementation.
-	
+v1.2.260325
+	Adding small comments and descriptions.
+	File and function removal and refactoring.

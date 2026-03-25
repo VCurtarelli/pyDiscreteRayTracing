@@ -2,16 +2,16 @@ import scipy.interpolate
 
 from py_libs import *
 # from fun_receiver_search import receiver_search
-from fun_calc_dist import calc_dist, calc_closest_point
+# from fun_calc_dist import calc_dist, calc_closest_point
 import eikonalfm as ekf
 
 
 class Ray:
     def __init__(self, source, receiver, ray_type, color=(0, 180, 0), marker='x'):
+        # Initializes variables
         self.source = source
         self.receiver = receiver
         self.path = None
-        self.angle = None
         self.time = None
         self.cells = None
         self.lengths = None
@@ -20,36 +20,23 @@ class Ray:
         self.converged = True
         self.ray_type = ray_type
 
+
     def calc_path(self, velocity_field):
-        method = velocity_field.method
-        if method == 'new':
-            self.new_calc_path(velocity_field)
-        if method == 'old':
-            self.old_calc_path(velocity_field)
-
-    def calc_time(self, velocity_field):
-        method = velocity_field.method
-        if method == 'new':
-            return self.new_calc_time(velocity_field)
-        if method == 'old':
-            return self.old_calc_time(velocity_field)
-
-    def new_calc_path(self, velocity_field):
+        # Calculates path for the given ray (for its source and receiver) through the environment
+        # Currently uses the fast marching method implemented via the EikonalFM package
         field = velocity_field.field
         cell_width = velocity_field.cell_width
         cell_height = velocity_field.cell_height
         ds = (cell_height, cell_width)
         xs = (self.source[1] // cell_height, self.source[0] // cell_width)
-        fm_tau = ekf.fast_marching(field,xs,ds,2)
-        ffm_tau1 = ekf.factored_fast_marching(field,xs,ds,2)
+
+        fm_tau = ekf.fast_marching(field,xs,ds,2)  # Eikonal solution (arrival-time at each cell given the source)
         receiver_cell = np.array((self.receiver[1] // cell_height, self.receiver[0] // cell_width),dtype=int)
-        visited_cells = [receiver_cell]
-        # j_m = np.zeros_like(field)
-        dists = [0.]
-        # plt.imshow(fm_tau)
-        # plt.show()
+        visited_cells = [receiver_cell]  # List of visited cells (starting at receiver)
+        dists = [0.]  # Distance traversed at each cell
         slowness = 1/field
         while True:
+            # Determines next cell based on time minimization (clipping at the edges)
             curr_cell = visited_cells[-1]
             xp = curr_cell[1]
             xr = curr_cell[1] + 1
@@ -57,23 +44,16 @@ class Ray:
             yp = curr_cell[0]
             yu = curr_cell[0] + 1
             yd = curr_cell[0] - 1
-            tr = np.inf
-            tl = np.inf
-            tu = np.inf
-            td = np.inf
-            # print(xp,yp,fm_tau[yp,xp])
-            if xr < velocity_field.cells_nx:
-                tr = fm_tau[yp,xr]
-            if 0 <= xl:
-                tl = fm_tau[yp,xl]
-            if yu < velocity_field.cells_ny:
-                tu = fm_tau[yu,xp]
-            if 0 <= yd:
-                td = fm_tau[yd,xp]
+
+            tr = fm_tau[yp,xr] if xr < velocity_field.cells_nx else np.inf
+            tl = fm_tau[yp,xl] if 0 <= xl else np.inf
+            tu = fm_tau[yu,xp] if yu < velocity_field.cells_ny else np.inf
+            td = fm_tau[yd,xp] if 0 <= yd else np.inf
             times = [tr, tl, tu, td]
-            direc = times.index(min(times))
+
+            direction_next_cell = times.index(min(times))
             next_cell = [-1, -1]
-            match direc:
+            match direction_next_cell:
                 case 0:
                     next_cell = curr_cell + np.array([ 0, 1])
                 case 1:
@@ -89,10 +69,6 @@ class Ray:
             dists[-1] += half_dist
             dists.append(half_dist)
 
-            # plt.imshow(fm_tau)
-            # plt.plot([cell[1] for cell in visited_cells], [cell[0] for cell in visited_cells], color='black')
-            # plt.show()
-
             if fm_tau[yn,xn] == 0:
                 break
         self.cells = visited_cells
@@ -100,7 +76,7 @@ class Ray:
         self.lengths = dists
 
 
-    def new_calc_time(self, velocity_field):
+    def calc_time(self, velocity_field):
         field = velocity_field.field
         Lengths = np.zeros_like(field)
         for jdx, cell in enumerate(self.cells):
@@ -110,200 +86,3 @@ class Ray:
         self.time = time
         Lengths = Lengths.reshape(-1,1)
         return time, Lengths
-
-    def old_calc_path(self, velocity_field, stop_param=0.01, iteration_step=0.05, iterations_max=100):
-        self.angle = np.angle((np.array(self.receiver) - np.array(self.source)) @ np.array([1, 1j]).T)
-        self.converged=False
-        theta_0 = self.angle
-        pos_receiver = self.receiver
-        pos_source = self.source
-        angles = [theta_0]
-        paths = []
-        pos_receiver = np.array(pos_receiver)
-        width = velocity_field.width
-        height = velocity_field.height
-
-        best_theta = 0
-        best_ang_dist = np.inf
-        best_path = None
-        while True:
-            theta = angles[-1]
-            _, _, positions, cells = self.old_ray_tracing(velocity_field)
-            lin_dist, ang_dist = calc_dist(pos_receiver, pos_source, positions)
-            lin_dist /= np.sqrt(width ** 2 + height ** 2) / 2
-            if np.abs(ang_dist) < np.abs(best_ang_dist):
-                best_ang_dist = ang_dist
-                best_theta = theta
-                best_path = positions
-            if lin_dist < stop_param:
-                # print("Solution found: {} iterations - {:.2f} / {:.2f}".format(len(angles), lin_dist, stop_param))
-                self.converged = True
-                if (int(pos_receiver[1] // velocity_field.cell_height),
-                    int(pos_receiver[0] // velocity_field.cell_width)) in cells:
-                    stop = cells.index((int(pos_receiver[1] // velocity_field.cell_height),
-                                        int(pos_receiver[0] // velocity_field.cell_width)))
-                    best_path = cells[:stop]
-                break
-            new_theta = (theta - iteration_step * ang_dist)
-            # print(lin_dist)
-            if lin_dist > 0.3:
-                new_theta = new_theta + 0.03*np.random.randn()
-            if len(angles) == iterations_max:
-                # print("Iteration forced break achieved: {} iterations - {:.2f} / {:.2f}".format(len(angles), lin_dist, stop_param))
-                self.converged = False
-                break
-            if len(angles) % 10 == 0:
-                iteration_step *= 0.95
-            angles.append(new_theta)
-            paths.append(positions)
-            self.angle = new_theta
-
-        angles.append(best_theta)
-        paths.append(best_path)
-
-        self.angle = best_theta
-        self.paths = paths
-        return angles, paths
-
-    def old_calc_time(self, velocity_field):
-        field = velocity_field.field
-        Lengths = np.zeros_like(field)
-        if not self.converged:
-            self.time = 0
-            return 0, Lengths
-        for jdx, cell in enumerate(self.cells):
-            Lengths[cell[0], cell[1]] = self.lengths[jdx]
-
-        time = (Lengths.reshape(-1, 1).T @ (1 / field.reshape(-1, 1))).item()
-        self.time = time
-        Lengths = Lengths.reshape(-1, 1)
-        return time, Lengths
-
-    def old_ray_tracing(self, velocity_field):
-        pos_source = self.source
-
-        theta_0 = self.angle
-        width = velocity_field.width
-        height = velocity_field.height
-        num_cells_x = velocity_field.cells_nx
-        num_cells_y = velocity_field.cells_ny
-        field = velocity_field.field
-        thetas = []
-        lengths = []
-        positions = []
-        cells = []
-        cell_width = width / num_cells_x
-        cell_height = height / num_cells_y
-
-        idx_x = int(pos_source[0] // cell_width)
-        idx_y = int(pos_source[1] // cell_height)
-
-        thetas.append(theta_0)
-        positions.append(pos_source)
-        cells.append((idx_y, idx_x))
-        cells.append((idx_y, idx_x))
-        while True:
-            pos_a_x, pos_a_y = positions[-1]  # crossing position from cell a (previous cell) to cell b (current cell)
-            idx_y, idx_x = cells[-1]
-            theta = thetas[-1]
-            mag_grad_V, direc_grad_V, Va, Vb = velocity_field.calc_grad(pos_a_x, pos_a_y, theta)
-
-            phi = direc_grad_V  # TODO: IF GRADIENT OF VELOCITY AND RAY DIRECTIONS ARE REVERTED, CANCEL IT
-            if np.cos(theta - phi) < 0:
-                phi = (phi + pi + 2 * pi) % (2 * pi)
-            alpha = theta - phi
-            sin_beta = np.sin(alpha) * Vb / Va
-            if abs(sin_beta) > 1.01:
-                beta = pi - alpha
-            else:
-                if np.abs(sin_beta) > 1:
-                    sin_beta = np.sign(sin_beta)
-                beta = np.asin(sin_beta)
-            gamma = beta + phi
-
-            theta_b = (gamma + 2 * pi) % (2 * pi)
-            sin_theta_b = np.sin(theta_b)
-            cos_theta_b = np.cos(theta_b)
-            epsilon = 1e-6
-            px = pos_a_x
-            py = pos_a_y
-            x0 = cell_width * np.floor(px / cell_width + epsilon)
-            x1 = cell_width * np.ceil(px / cell_width + epsilon)
-            y0 = cell_height * np.floor(py / cell_height + epsilon)
-            y1 = cell_height * np.ceil(py / cell_height + epsilon)
-
-            if sin_theta_b == 0:
-                t_T = np.inf
-                t_B = np.inf
-            else:
-                t_T = (y1 - py) / sin_theta_b
-                t_B = (y0 - py) / sin_theta_b
-            if cos_theta_b == 0:
-                t_R = np.inf
-                t_L = np.inf
-            else:
-                t_R = (x1 - px) / cos_theta_b
-                t_L = (x0 - px) / cos_theta_b
-            ts = [t_T, t_B, t_R, t_L]
-            for i in range(len(ts)):
-                if ts[i] <= 0:
-                    ts[i] = np.inf
-            t_min_idx = np.argmin(ts)
-
-            t = ts[t_min_idx]
-            if t_min_idx == 0:
-                idx_y += 1
-            if t_min_idx == 1:
-                idx_y -= 1
-            if t_min_idx == 2:
-                idx_x += 1
-            if t_min_idx == 3:
-                idx_x -= 1
-            pos_b_x = px + t * cos_theta_b
-            pos_b_y = py + t * sin_theta_b
-
-            if all([t_ == np.inf for t_ in ts]):
-                break
-            thetas.append(float(theta_b))
-            positions.append((pos_b_x, pos_b_y))
-            cells.append((idx_y, idx_x))
-            if (not 0 <= pos_b_x <= width) or (not 0 <= pos_b_y <= height):
-                break
-            if sin_theta_b > 1 or np.isnan(sin_theta_b):
-                break
-
-        cells = cells[1:]
-
-        new_cells = []
-        new_thetas = []
-        new_positions = []
-        for idx, position in enumerate(positions):
-            if idx == 0:
-                new_positions.append(position)
-                continue
-            pos_x, pos_y = position
-            pos, c0, c1, t = calc_closest_point(self.receiver, positions[:idx + 1], return_params=True)
-            if 0 <= t <= 1 or idx == len(positions) - 1:
-                pos = tuple(pos.reshape(-1, ))
-            else:
-                pos = position
-            new_positions.append(pos)
-            new_cells.append(cells[idx - 1])
-            new_thetas.append(thetas[idx - 1])
-
-            if 0 <= t <= 1:
-                break
-            if (not 0 <= pos_x <= width) or (not 0 <= pos_y <= height):
-                break
-            if (not 0 <= cells[idx][0] < num_cells_y) or (not 0 <= cells[idx][1] < num_cells_x):
-                break
-
-        cells = new_cells
-        thetas = new_thetas
-        positions = new_positions
-        lengths = [norm(np.array(positions[i]) - np.array(positions[i - 1])) for i in range(1, len(positions))]
-        self.thetas = thetas
-        self.cells = cells
-        self.lengths = lengths
-        self.path = positions
-        return thetas, lengths, positions, cells

@@ -1,11 +1,13 @@
 import numpy as np
 
-# from main import w, nx, h, ny
 
-
-def position_devices(mode, params):
-    def _s_layer_r_layer(_params):
-        _nx, _ny, _w, _h, _ns, _nr, _ofs, _n_travels = _params
+def position_devices(mode, env_params, dev_params):
+    def _s_layer_r_layer(_env_params, _dev_params):
+        _nx = _env_params.num_cells_x
+        _ny = _env_params.num_cells_y
+        _ns = _dev_params.n_sources
+        _nr = _dev_params.n_receivers
+        _ofs = _dev_params.offset
 
         _pos_sx = []
         _pos_sy = []
@@ -19,8 +21,14 @@ def position_devices(mode, params):
 
         return _pos_sx, _pos_sy, _pos_rx, _pos_ry
 
-    def _s_layer_r_blob(_params):
-        _nx, _ny, _w, _h, _ns, _nr, _ofs, _n_travels = _params
+    def _s_layer_r_blob(_env_params, _dev_params):
+        _nx = _env_params.num_cells_x
+        _ny = _env_params.num_cells_y
+        _ns = _dev_params.n_sources
+        _nr = _dev_params.n_receivers
+        _ofs = _dev_params.offset
+        _n_travels = _dev_params.n_travels
+        _h = _env_params.height
 
         _pos_sx = []
         _pos_sy = []
@@ -36,8 +44,14 @@ def position_devices(mode, params):
 
         return _pos_sx, _pos_sy, _pos_rx, _pos_ry
 
-    def _s_layer_r_blob_column(_params):
-        _nx, _ny, _w, _h, _ns, _nr, _ofs, _n_travels = _params
+    def _s_layer_r_blob_column(_env_params, _dev_params):
+        _nx = _env_params.num_cells_x
+        _ny = _env_params.num_cells_y
+        _ns = _dev_params.n_sources
+        _nr = _dev_params.n_receivers
+        _ofs = _dev_params.offset
+        _n_travels = _dev_params.n_travels
+        _h = _env_params.height
 
         _pos_sx = []
         _pos_sy = []
@@ -56,8 +70,14 @@ def position_devices(mode, params):
 
         return _pos_sx, _pos_sy, _pos_rx, _pos_ry
 
-    def _s_layer_shallowcolumn_r_blob(_params):
-        _nx, _ny, _w, _h, _ns, _nr, _ofs, _n_travels = _params
+    def _s_layer_shallowcolumn_r_blob(_env_params, _dev_params):
+        _nx = _env_params.num_cells_x
+        _ny = _env_params.num_cells_y
+        _ns = _dev_params.n_sources
+        _nr = _dev_params.n_receivers
+        _ofs = _dev_params.offset
+        _n_travels = _dev_params.n_travels
+        _h = _env_params.height
 
         _pos_sx = []
         _pos_sy = []
@@ -78,16 +98,16 @@ def position_devices(mode, params):
 
     match mode:
         case 0:
-            psx, psy, prx, pry = _s_layer_r_layer(params)
+            psx, psy, prx, pry = _s_layer_r_layer(env_params, dev_params)
             pname = 'layer/layer'
         case 1:
-            psx, psy, prx, pry = _s_layer_r_blob(params)
+            psx, psy, prx, pry = _s_layer_r_blob(env_params, dev_params)
             pname = 'layer-blob'
         case 2:
-            psx, psy, prx, pry = _s_layer_r_blob_column(params)
+            psx, psy, prx, pry = _s_layer_r_blob_column(env_params, dev_params)
             pname = 'layer-column/blob'
         case 3:
-            psx, psy, prx, pry = _s_layer_shallowcolumn_r_blob(params)
+            psx, psy, prx, pry = _s_layer_shallowcolumn_r_blob(env_params, dev_params)
             pname = 'layer-shallowcolumn/blob'
         case _:
             raise NotImplementedError
@@ -97,7 +117,10 @@ def position_devices(mode, params):
     prx = np.concatenate(prx)
     pry = np.concatenate(pry)
 
-    _nx, _ny, _w, _h, _, _, _, _ = params
+    _nx = env_params.num_cells_x
+    _ny = env_params.num_cells_y
+    _w = env_params.width
+    _h = env_params.height
     cw = _w / _nx
     ch = _h / _ny
     psx = cw * (0.5 + np.around(psx))

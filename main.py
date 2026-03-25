@@ -6,48 +6,34 @@ from class_Environment import Environment, EstEnvironment
 import sys
 from fun_encode64 import mhash, encode16
 import time
-
-
-class Timer:
-    def __init__(self):
-        self.times = {'start': time.time()}
-        self.delta_times = {}
-        self.key_max_length = 5
-
-    def time(self, name=None):
-        if name is None:
-            name = str(len(self.times.keys()))
-        if name in self.times.keys():
-            name = '{} '.format(str(len(self.times.keys()))) + name
-        if not isinstance(name, str):
-            name = str(name)
-        new_time = time.time()
-        prev_time = list(self.times.values())[-1]
-        self.times[name] = new_time
-        self.delta_times[name] = new_time - prev_time
-        self.key_max_length = max(len(name), self.key_max_length)
-
-    def show_times(self):
-        for key in self.times.keys():
-            print('{}: {}'.format(key.ljust(self.key_max_length), self.times[key]))
-
-    def show_delta_times(self):
-        for key in self.delta_times.keys():
-            print('{}: {}ms'.format(key.ljust(self.key_max_length+1), '{:.2f}'.format(1000*self.delta_times[key]).rjust(8)))
+from dataclasses import dataclass
+from typing import Any
+from numpy import ndarray
 
 
 np.set_printoptions(legacy='1.25',precision=2,linewidth=600,threshold=sys.maxsize)
 decimal.getcontext().prec = 2
 
 rms = lambda x: np.sqrt(np.mean(x**2))
-def main(num_cells_x, num_cells_y, width, height, dev_positioning, mirrored,
-         param_bas=(0.05,), param_trd=(0.05, 0.05, 0), param_spl=(0.05, 0), sigma=0.0, show_path=False, percent_rays=100):
+def main(env_params, dev_positioning,
+         param_bas, param_trd, param_spl, sigma=0.0, show_path=False):
+
+    ## Extract parameters from input
+    num_cells_x = env_params.num_cells_x
+    num_cells_y = env_params.num_cells_y
+    width = env_params.width
+    height = env_params.height
     pos_sources_x, pos_sources_y, pos_receivers_x, pos_receivers_y, pos_name = dev_positioning
 
-    ## ---------------------------
-    ## Hash and folder creation
-    ## ---------------------------
+    ## Extract sources and receivers, generate environments, and related variables
+    pos_receivers = list(set(zip(pos_receivers_x, pos_receivers_y)))
+    pos_sources = list(set(zip(pos_sources_x, pos_sources_y)))
 
+    est_envs, obs_env = generate_environments(height, num_cells_x, num_cells_y, pos_receivers, pos_sources, width)
+    model_slowness = 1/obs_env.vy.reshape(-1, 1)
+    obs_times, n_rays = generate_observed_times(obs_env, sigma)
+
+    ## Export device positions and simulation parameters
     parameters = {
         'pos_name': pos_name,
         'num_cells_x': num_cells_x,
@@ -58,98 +44,18 @@ def main(num_cells_x, num_cells_y, width, height, dev_positioning, mirrored,
         'pos_receivers_y': pos_receivers_y,
         'pos_sources_x': pos_sources_x,
         'pos_sources_y': pos_sources_y,
-        'mirrored': mirrored,
         'param_bas': param_bas,
         'param_trd': param_trd,
         'param_spl': param_spl,
     }
 
-    hash_val = mhash(parameters.values())
-    code = encode16(hash_val)
-    direc = 'Results/'
-    os.makedirs(direc, exist_ok=True)
-    os.makedirs(direc + code, exist_ok=True)
-
-    ## ---------------------------
-    ## Sources, receivers, and environments
-    ## ---------------------------
-
-    pos_receivers = list(set(zip(pos_receivers_x, pos_receivers_y)))
-    pos_sources = list(set(zip(pos_sources_x, pos_sources_y)))
+    code, direc = make_folders_and_hash(n_rays, parameters)
     export_pos_devices(pos_sources, pos_receivers, direc + code + '/', width, height)
 
-    obs_env = Environment(num_cells_x, num_cells_y, width, height, None, mirrored=False)
-    obs_env.generate_rays(pos_sources, pos_receivers)
+    ## Main iteration loop
+    iteration_loop(code, est_envs, model_slowness, n_rays, obs_env, obs_times, param_bas, param_spl, param_trd)
 
-    est_envs = []
-    for field_name in ['Basic', 'Trade', 'Split']:
-        est_env = EstEnvironment(num_cells_x, num_cells_y, width, height, None, field_name=field_name)
-        est_env.generate_rays(pos_sources, pos_receivers)
-        est_envs.append(est_env)
-
-    ## ---------------------------
-    ## Other simulation parameters
-    ## ---------------------------
-
-    obs_times = [ray.time for ray in obs_env.rays]
-    mean_time = np.mean(obs_times)
-    rng = np.random.default_rng(0)
-    noise_times = list(sigma*mean_time*rng.random((len(obs_env.rays),)))
-    new_obs_times = [obs_times[i] + noise_times[i] for i in range(len(obs_env.rays))]
-    obs_times = new_obs_times
-    n_rays = len(obs_times)
-    model_slowness = 1/obs_env.vy.reshape(-1, 1)
-
-    parameters['code'] = code
-    parameters['n_rays'] = n_rays
-    parameters_text = '\n'.join([key + ': ' + str(parameters[key]) for key in parameters.keys()])
-    with open(direc + code + '/simulation parameters.txt', 'w') as f:
-        f.write(parameters_text)
-
-    # obs_env.plot_curves(obs_env.rays, pos_sources, pos_receivers)
-    # plt.show()
-
-    it_idx = 1
-    vmin = np.inf
-    vmax = -1
-    obs_env.field_to_csv(0, export_params=True, code=code)
-    print('\n'*10)
-    while True:
-        print("Iteration {}".format(it_idx))
-        ## ---------------------------
-        ## Iterate estimated fields
-        ## ---------------------------
-        est_envs[0].iterate_field(n_rays, alpha=param_bas[0], obs_times=obs_times,
-                                  mode='classic')
-        est_envs[1].iterate_field(n_rays, alpha=param_trd[0], beta=param_trd[1], obs_times=obs_times,
-                                  model_slowness=model_slowness, masking_depth=param_trd[2],
-                                  mode='trade')
-        est_envs[2].iterate_field(n_rays, alpha=param_spl[0], obs_times=obs_times,
-                                  model_slowness=model_slowness, masking_depth=param_spl[1],
-                                  mode='split')
-        # print("FIELD ITERATED")
-
-        ## ---------------------------
-        ## Calc metrics #todo: reimplement: field_to_csv generation; vmin, vmax calculation
-        ## ---------------------------
-        for est_env in est_envs:
-            est_env.calc_metrics(obs_times, obs_env.field)
-
-        err_times = []
-        for est_env in est_envs:
-            est_env.field_to_csv(it_idx, code=code)
-            est_env.field_to_csv(it_idx,comp=obs_env.field, code=code,vmin=-20,vmax=20, export_params=True)
-            est_env.export_metrics(code=code)
-
-            err_times.append(est_env.cost_function(est_env.rays, obs_times))
-
-
-        if it_idx == 5:
-            print("LIMIT REACHED - Code " + code)
-            break
-        it_idx += 1
-
-    # err_time_bas = est_env_bas.cost_function(est_env_bas.rays, obs_times)
+    ## Print metrics for on-execution assessment
     print('Travel-time error:')
     for env_idx, est_env in enumerate(est_envs):
         print('\t{}. - {:.4f}ms'.format(est_env.field_name[:3], 1000 * est_env.est_time_mse[-1]),
@@ -164,26 +70,128 @@ def main(num_cells_x, num_cells_y, width, height, dev_positioning, mirrored,
     #             show_path=show_path, comp_field=True)
 
 
+def generate_environments(height, num_cells_x, num_cells_y, pos_receivers: list[tuple[Any, Any]],
+                          pos_sources: list[tuple[Any, Any]], width) -> tuple[list[EstEnvironment], Environment]:
+    obs_env = Environment(num_cells_x, num_cells_y, width, height)
+    obs_env.generate_rays(pos_sources, pos_receivers)
+
+    est_envs = []
+    for field_name in ['Basic', 'Trade', 'Split']:
+        est_env = EstEnvironment(num_cells_x, num_cells_y, width, height, None, field_name=field_name)
+        est_env.generate_rays(pos_sources, pos_receivers)
+        est_envs.append(est_env)
+    return est_envs, obs_env
+
+
+def iteration_loop(code: str, est_envs: list[Any], model_slowness: ndarray,
+                   n_rays: int, obs_env: Environment, obs_times: list[Any], param_bas, param_spl, param_trd):
+    it_idx = 1
+
+    ## Export observed environment
+    obs_env.field_to_csv(0, export_params=True, code=code)
+    print('\n' * 10)
+    while True:
+        print("Iteration {}".format(it_idx))
+
+        ## Iterate estimated fields
+        est_envs[0].iterate_field(n_rays, alpha=param_bas.alpha, obs_times=obs_times,
+                                  mode='classic')
+        est_envs[1].iterate_field(n_rays, alpha=param_trd.alpha, beta=param_trd.beta, obs_times=obs_times,
+                                  model_slowness=model_slowness, masking_depth=param_trd.masking_depth,
+                                  mode='trade')
+        est_envs[2].iterate_field(n_rays, alpha=param_spl.alpha, obs_times=obs_times,
+                                  model_slowness=model_slowness, masking_depth=param_spl.masking_depth,
+                                  mode='split')
+
+        ## Calculate and export metrics, export estimated environment
+        for est_env in est_envs:
+            est_env.calc_metrics(obs_times, obs_env.field)
+
+        err_times = []
+        for est_env in est_envs:
+            est_env.field_to_csv(it_idx, code=code)
+            est_env.field_to_csv(it_idx, comp=obs_env.field, code=code, vmin=-20, vmax=20, export_params=True)
+            est_env.export_metrics(code=code)
+
+            err_times.append(est_env.cost_function(est_env.rays, obs_times))
+
+        ## Loop end-condition
+        if it_idx == 5:
+            print("LIMIT REACHED - Code " + code)
+            break
+        it_idx += 1
+
+
+def make_folders_and_hash(n_rays: int, parameters: dict) -> tuple[str, str]:
+    hash_val = mhash(parameters.values())
+    code = encode16(hash_val)
+    direc = 'Results/'
+    os.makedirs(direc, exist_ok=True)
+    os.makedirs(direc + code, exist_ok=True)
+
+    parameters['code'] = code
+    parameters['n_rays'] = n_rays
+    parameters_text = '\n'.join([key + ': ' + str(parameters[key]) for key in parameters.keys()])
+    with open(direc + code + '/simulation parameters.txt', 'w') as f:
+        f.write(parameters_text)
+    return code, direc
+
+
+def generate_observed_times(obs_env: Environment, sigma: float) -> tuple[list[Any], int]:
+    obs_times = [ray.time for ray in obs_env.rays]
+    mean_time = np.mean(obs_times)
+    rng = np.random.default_rng(0)
+    noise_times = list(sigma * mean_time * rng.random((len(obs_env.rays),)))
+    new_obs_times = [obs_times[i] + noise_times[i] for i in range(len(obs_env.rays))]
+    obs_times = new_obs_times
+    n_rays = len(obs_times)
+    return obs_times, n_rays
+
+
+@dataclass
+class EnvParameters:
+    num_cells_x: int
+    num_cells_y: int
+    width: int
+    height: int
+
+@dataclass
+class DeviceParameters:
+    n_sources: int
+    n_receivers: int
+    n_travels: int
+    offset: int
+
+@dataclass
+class MethodParameters:
+    alpha: float
+    beta: float = 0
+    masking_depth: int = 1000
+
+
+
 if __name__ == '__main__':
-    nx = 43
-    ny = 50
-    w = 2000
-    h = 2000
-    ns = 15
-    nr = 15
-    n_travels = 5
-    ofs = 0
-    params = nx, ny, w, h, ns, nr, ofs, n_travels
+    env_params = EnvParameters(num_cells_x=15,#43,
+                               num_cells_y=25,#50,
+                               width=2000,
+                               height=2000)
+    dev_params = DeviceParameters(n_sources=8,#15,
+                                  n_receivers=7,#15,
+                                  n_travels=5,
+                                  offset=0)
 
-    for device_pos in range(4):
+    for device_pos_mode_idx in range(4):
     # for device_pos in [2]:
-        dev_positioning = position_devices(device_pos, params)
+        dev_positioning = position_devices(device_pos_mode_idx, env_params, dev_params)
 
-        p_bas = [0.95]
-        p_trd = [0.85, 0.45, 1000]
-        p_spl = [0.85, 1000]
+        p_bas = MethodParameters(alpha=0.95)
+        p_trd = MethodParameters(alpha=0.85,
+                                 beta=0.45,
+                                 masking_depth=1000)
+        p_spl = MethodParameters(alpha=0.85,
+                                 masking_depth=1000)
         sig = 0.000
 
         np.set_printoptions(legacy='1.25', precision=6, linewidth=320)
         decimal.getcontext().prec = 2
-        main(nx, ny, w, h, dev_positioning, False, p_bas, p_trd, p_spl, sig, show_path=False)
+        main(env_params, dev_positioning, p_bas, p_trd, p_spl, sig, show_path=False)
