@@ -1,5 +1,4 @@
 from py_libs import *
-# import fast_sweeping as sf
 
 
 def show_figure(pairs: list,

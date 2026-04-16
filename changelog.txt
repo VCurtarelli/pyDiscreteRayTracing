@@ -34,3 +34,5 @@ v1.2.260324
 v1.2.260325
 	Adding small comments and descriptions.
 	File and function removal and refactoring.
+v1.2.260416
+	Cara, eu perdi a conta de tudo que eu mudei.

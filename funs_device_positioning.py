@@ -1,5 +1,5 @@
 import numpy as np
-
+import matplotlib.pyplot as plt
 
 def position_devices(mode, env_params, dev_params):
     def _s_layer_r_layer(_env_params, _dev_params):
@@ -15,9 +15,9 @@ def position_devices(mode, env_params, dev_params):
         _pos_ry = []
 
         _pos_sx.append(np.linspace(_ofs, _nx - 1 - _ofs, _ns))
-        _pos_sy.append(np.array([_ofs for _ in range(_ns)]))
+        _pos_sy.append(np.array([_ny - 1 - _ofs for _ in range(_ns)]))
         _pos_rx.append(np.linspace(_ofs, _nx - 1 - _ofs, _nr))
-        _pos_ry.append(np.array([_ny - 1 - _ofs for _ in range(_nr)]))
+        _pos_ry.append(np.array([_ofs for _ in range(_nr)]))
 
         return _pos_sx, _pos_sy, _pos_rx, _pos_ry
 
@@ -36,11 +36,11 @@ def position_devices(mode, env_params, dev_params):
         _pos_ry = []
 
         _pos_sx.append(np.linspace(_ofs, _nx - 1 - _ofs, _ns))
-        _pos_sy.append(np.array([_ofs for _ in range(_ns)]))
+        _pos_sy.append(np.array([_ny-1-_ofs for _ in range(_ns)]))
         for travel_idx in range(_n_travels):
             travel_idx = travel_idx / (_n_travels - 1)
             _pos_rx.append(np.linspace(_ofs, _nx - 1 - _ofs, _nr))
-            _pos_ry.append(np.array([_ny - 1 - travel_idx * (500 / _h * (_ny - 1)) for _ in range(_nr)]))
+            _pos_ry.append(np.array([travel_idx * (500 / _h * (_ny - 1)) for _ in range(_nr)]))
 
         return _pos_sx, _pos_sy, _pos_rx, _pos_ry
 
@@ -59,14 +59,14 @@ def position_devices(mode, env_params, dev_params):
         _pos_ry = []
 
         _pos_sx.append(np.linspace(_ofs, _nx - 1 - _ofs, _ns))
-        _pos_sy.append(np.array([_ofs for _ in range(_ns)]))
+        _pos_sy.append(np.array([_ny - 1 - _ofs for _ in range(_ns)]))
 
         for travel_idx in range(_n_travels):
             travel_idx = travel_idx / (_n_travels-1)
             _pos_rx.append(np.linspace(_ofs, _nx - 1 - _ofs, _nr))
-            _pos_ry.append(np.array([_ny - 1 - travel_idx * (500 / _h * (_ny-1)) for _ in range(_nr)]))
+            _pos_ry.append(np.array([travel_idx * (500 / _h * (_ny-1)) for _ in range(_nr)]))
         _pos_rx.append(np.array([_nx//2 for _ in range(_ns)]))
-        _pos_ry.append(np.linspace(_ny//4, (3*_ny)//4, _ns))
+        _pos_ry.append(np.linspace(500 / _h * (_ny-1), 1000 / _h * (_ny-1), _ns))
 
         return _pos_sx, _pos_sy, _pos_rx, _pos_ry
 
@@ -85,33 +85,29 @@ def position_devices(mode, env_params, dev_params):
         _pos_ry = []
 
         _pos_sx.append(np.linspace(_ofs, _nx - 1 - _ofs, _ns))
-        _pos_sy.append(np.array([_ofs for _ in range(_ns)]))
+        _pos_sy.append(np.array([_ny - 1 - _ofs for _ in range(_ns)]))
         _pos_sx.append(np.array([_ofs for _ in range(_n_travels)]))
-        _pos_sy.append(np.array([_ny - 1 - travel_idx/(_n_travels-1) * (500 / _h * (_ny-1)) for travel_idx in range(_n_travels)]))
+        _pos_sy.append(np.array([travel_idx/(_n_travels-1) * (500 / _h * (_ny-1)) for travel_idx in range(_n_travels)]))
         for travel_idx in range(_n_travels):
             travel_idx = travel_idx / (_n_travels-1)
             _pos_rx.append(np.linspace(1+_ofs, _nx - 1 - _ofs, _nr))
-            _pos_ry.append(np.array([_ny - 1 - travel_idx * (500 / _h * (_ny-1)) for _ in range(_nr)]))
+            _pos_ry.append(np.array([travel_idx * (500 / _h * (_ny-1)) for _ in range(_nr)]))
 
         return _pos_sx, _pos_sy, _pos_rx, _pos_ry
 
 
     match mode:
-        case 0:
+        case 'layer/layer':
             psx, psy, prx, pry = _s_layer_r_layer(env_params, dev_params)
-            pname = 'layer/layer'
-        case 1:
+        case 'layer/blob':
             psx, psy, prx, pry = _s_layer_r_blob(env_params, dev_params)
-            pname = 'layer-blob'
-        case 2:
+        case 'layer/column+blob':
             psx, psy, prx, pry = _s_layer_r_blob_column(env_params, dev_params)
-            pname = 'layer-column/blob'
-        case 3:
+        case 'layer+shallowcolumn/blob':
             psx, psy, prx, pry = _s_layer_shallowcolumn_r_blob(env_params, dev_params)
-            pname = 'layer-shallowcolumn/blob'
         case _:
-            raise NotImplementedError
-
+            raise NotImplementedError("The mode {} is not implemented.".format(mode))
+    pname = mode
     psx = np.concatenate(psx)
     psy = np.concatenate(psy)
     prx = np.concatenate(prx)
@@ -130,5 +126,20 @@ def position_devices(mode, env_params, dev_params):
 
     psx, psy = tuple(np.array(list(set(zip(list(psx), list(psy))))).T)
     prx, pry = tuple(np.array(list(set(zip(list(prx), list(pry))))).T)
-
     return psx, psy, prx, pry, pname
+
+
+def export_pos_devices(pos_sources, pos_receivers, direc, width, height):
+    header = 'x_pos,y_pos'
+    pos_sources = [(ps[0], ps[1]) for ps in pos_sources]
+    pos_receivers = [(pr[0], pr[1]) for pr in pos_receivers]
+    txt_sources = '\n'.join([header] + ['{},{}'.format(*pos) for pos in pos_sources])
+    txt_receivers = '\n'.join([header] + ['{},{}'.format(*pos) for pos in pos_receivers])
+
+    with open(direc + '/pos_sources.csv', 'w') as f:
+        f.write(txt_sources)
+        f.close()
+    with open(direc + '/pos_receivers.csv', 'w') as f:
+        f.write(txt_receivers)
+        f.close()
+    pass
