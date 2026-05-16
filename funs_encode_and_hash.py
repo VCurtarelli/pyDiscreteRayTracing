@@ -36,16 +36,22 @@ def mhash(arg):
     return b
 
 
-def make_folders_and_hash(n_rays: int, parameters: dict) -> tuple[str, str]:
+def export_params(parameters: dict, direc, name, filename):
+    parameters_text = '\n'.join([key + ': ' + str(parameters[key]) for key in parameters.keys()])
+    with open(direc+name+'/'+filename+'.txt', 'w') as f:
+        f.write(parameters_text)
+
+
+def make_folders_and_hash(n_rays: int, parameters: dict, name=None) -> tuple[str, str, dict]:
     hash_val = mhash(parameters.values())
     code = encode16(hash_val)
     direc = 'Results/'
+    if name is None:
+        name = code
     os.makedirs(direc, exist_ok=True)
-    os.makedirs(direc + code, exist_ok=True)
+    os.makedirs(direc + name, exist_ok=True)
 
     parameters['code'] = code
     parameters['n_rays'] = n_rays
-    parameters_text = '\n'.join([key + ': ' + str(parameters[key]) for key in parameters.keys()])
-    with open(direc + code + '/simulation parameters.txt', 'w') as f:
-        f.write(parameters_text)
-    return code, direc
+    export_params(parameters, direc, name, 'simulation parameters')
+    return code, direc, parameters

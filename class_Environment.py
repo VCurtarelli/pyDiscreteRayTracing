@@ -4,6 +4,7 @@ from class_Ray import Ray
 from py_libs import *
 import pickle
 from fun_truncated_svd import truncated_svd
+from funs_generate_env_fields import generate_temp_field, generate_sal_field
 
 rms = lambda x: np.sqrt(np.mean(x ** 2))
 alpha_rp = lambda x: x/np.sqrt(1-x**2)
@@ -34,6 +35,7 @@ class Environment:
         self.rays = None
         self.sources = None
         self.receivers = None
+        self.n_its = 10
 
     def generate_rays(self, pos_sources, pos_receivers, color=(180, 180, 0), marker='1'):
         # Generates rays from source to receiver as Ray class
@@ -53,7 +55,7 @@ class Environment:
         self.update_rays()
         return rays
 
-    def generate_field(self, mode=None):
+    def generate_field(self, mode=None, temperature_field=None, salinity_field=None):
         width = self.width
         height = self.height
 
@@ -61,19 +63,18 @@ class Environment:
         x = self.range_x
         y = self.range_y
         X, Y = np.meshgrid(x, y)  # X-Y plane grid
-        # X = (X - np.amin(X)) / (np.amax(X) - np.amin(X))
-        # Y = (Y - np.amin(Y)) / (np.amax(Y) - np.amin(Y))
 
-        # Y_ = Y/5000
-        # X_ = X/2000
-        # np.random.seed(0)
-        # temperature_field = 28 - 24*np.log10(10*Y_+1) + 6*X_*(1.05-Y_)
-        # salinity_field = 30 + 10/(1+np.exp(-2*(0.5-Y_) + 0.5*X_*(1.05-Y_)))
-        temperature_field = 4 + (32-5) * np.exp(-Y / 600) * (1 - 0.2 * (X / 4000))
-        salinity_field = 34.5 + (1 + 0.5 * (X / 4000)) / (1 + np.exp((Y - 500)/200))
+        # temperature_field = 4 + (32-5) * np.exp(-Y / 600) * (1 - 0.2 * (X / 4000))
+        # salinity_field = 34.5 + (1 + 0.5 * (X / 4000)) / (1 + np.exp((Y - 500)/200))
+
+        if temperature_field is None:
+            temperature_field = generate_temp_field(X, Y, x_fac=0.2)
+        if salinity_field is None:
+            salinity_field = generate_sal_field(X, Y, x_fac=0.5)
+        # salinity_field = 34.5 + (1.5- 0.5 * (X / 2000)) / (1 + np.exp((Y - 500)/200))
         depth_field = Y
         if mode is None:
-            mode = 'delgrosso'
+            mode = 'import'
         match mode:
             case 'munk':
                 velocity_field = mod_munk_profile(0.00737, 1500, 1300, 1300, 0,1, Y, x_mat=X)
@@ -83,10 +84,21 @@ class Environment:
                 velocity_field = delgrosso_profile(temperature_field, salinity_field, depth_field, amp=0)
             case 'wilson':
                 velocity_field = wilson_profile(temperature_field, salinity_field, depth_field, amp=0)
+            case 'import':
+                with open('input/select_block_velocity_field.dat', 'rb') as f:
+                    data = pkl.load(f)
+                    velocity_field = np.array(data['velocity_yearly'])
+                    depth = data['depth']
             case _:
                 raise NotImplementedError("Needs to implement other types of field")
 
-        self.vy = mod_munk_profile(0.00737, 1500, 1300, 1300, 0, 1, Y)
+        with open('midput/slowness_field_eofs.dat', 'rb') as f:
+            data = pkl.load(f)
+        mean_slowness = data['mean']
+        mean_velocity = 1/mean_slowness
+        mean_velocity = np.concatenate(self.cells_nx*[mean_velocity.reshape(-1, 1)], axis=1)
+        self.vy = mean_velocity
+        # self.vy = mod_munk_profile(0.00737, 1500, 1300, 1300, 0, 1, Y)
         self.vx = velocity_field - self.vy
         return velocity_field
 
@@ -154,35 +166,56 @@ class Environment:
             ax.legend(loc='upper left')
         plt.show()
 
-    def field_to_csv(self, idx, direc='Results/', export_params=False, comp=None, vmin=None, vmax=None, code=''):
+    def field_to_csv(self, idx, direc='Results/', export_params=False, comp=None, vmin=None, vmax=None, code='', mode='xyv'):
         # Export field to a csv (ordered to follow own LaTeX formatting for heatmaps)
         field = self.field
         grid_x = self.range_x - self.range_x[0]
         grid_y = self.range_y - self.range_y[0]
         if comp is not None:
             field = field - comp
-        txt = ['y,x,val']
-        for y_idx in range(self.cells_ny + 1):
-            if y_idx == self.cells_ny:
-                y_coord = self.height
-                y_idx -= 1
-            else:
-                y_coord = grid_y[y_idx]
-            for x_idx in range(self.cells_nx + 1):
-                if x_idx == self.cells_nx:
-                    x_coord = self.width
-                    x_idx -= 1
+        idx_name = '0_' if idx == 0 else ('it' + str(idx) + '_') if isinstance(idx, int) else str(idx) + '_'
+        if mode == 'xyv':
+            txt = ['y,x,val']
+            for y_idx in range(self.cells_ny + 1):
+                if y_idx == self.cells_ny:
+                    y_coord = self.height
+                    y_idx -= 1
                 else:
-                    x_coord = grid_x[x_idx]
-                velocity = field[y_idx, x_idx]
-                txt.append('{:.4f},{:.4f},{:.4f}'.format(y_coord, x_coord, velocity))
-        txt = '\n'.join(txt)
-        filename = code + '/' + ('it' + str(idx) + '_' if idx != 0 else '') + 'field_' + self.field_name.lower()
-        if comp is not None:
-            filename += '_comp'
-        with open(direc + filename + '.csv', 'w') as f:
-            f.write(txt)
-            f.close()
+                    y_coord = grid_y[y_idx]
+                for x_idx in range(self.cells_nx + 1):
+                    if x_idx == self.cells_nx:
+                        x_coord = self.width
+                        x_idx -= 1
+                    else:
+                        x_coord = grid_x[x_idx]
+                    velocity = field[y_idx, x_idx]
+                    txt.append('{:.4f},{:.4f},{:.4f}'.format(y_coord, x_coord, velocity))
+            txt = '\n'.join(txt)
+            filename = code + '/' + idx_name + 'field_' + self.field_name.lower()
+            if comp is not None:
+                filename += '_comp'
+            with open(direc + filename + '.csv', 'w') as f:
+                f.write(txt)
+                f.close()
+
+        elif mode == 'yx':
+            txt = [','.join(['y'] + [str(col) for col in range(self.cells_nx)])]
+            for y_idx in range(self.cells_ny):
+                # if y_idx == self.cells_ny:
+                #     y_coord = self.height
+                #     y_idx -= 1
+                # else:
+                y_coord = grid_y[y_idx] + self.cell_height/2
+                x_velocity = list(np.around(field[y_idx, :], 4))
+                x_velocity = ','.join([str(v) for v in x_velocity])
+                txt.append(str(y_coord) + ',' + x_velocity)
+            txt = '\n'.join(txt)
+            filename = code + '/' + idx_name + 'profiles_' + self.field_name.lower()
+            if comp is not None:
+                filename += '_comp'
+            with open(direc + filename + '.csv', 'w') as f:
+                f.write(txt)
+                f.close()
 
         if export_params:
             filename = code + '/' + 'params'
@@ -195,13 +228,16 @@ class Environment:
             nrows = self.cells_ny + 1
             ncols = self.cells_nx + 1
             txt = [
-                r'\def\ymin{' + str(vmin) + r'}',
-                r'\def\ymax{' + str(vmax) + r'}',
+                r'\def\zmin{' + str(vmin) + r'}',
+                r'\def\zmax{' + str(vmax) + r'}',
                 r'\def\nrows{' + str(nrows) + r'}',
                 r'\def\ncols{' + str(ncols) + r'}',
                 r'\def\pyNx{' + str(ncols) + r'}',
                 r'\def\pyNz{' + str(nrows) + r'}',
                 r'\def\pyN{' + str(nrows * ncols) + r'}',
+                r'\def\pyNs{' + str(len(self.sources)) + r'}',
+                r'\def\pyNr{' + str(len(self.receivers)) + r'}',
+                r'\def\pyNits{' + str(self.n_its) + r'}',
             ]
             txt = '\n'.join(txt)
             with open(direc + filename + '.tex', 'w') as f:
@@ -213,6 +249,85 @@ class Environment:
         for ray in self.rays:
             ray.calc_path(self)
             ray.calc_time(self)
+
+    def update_traveled_dists(self, rays, n_rays):
+        # Updates traveled distances matrix (R)
+        num_cells = self.cells_n
+        traveled_dists = np.zeros([n_rays, num_cells])
+        for idx, ray in enumerate(rays):
+            ray.calc_path(self)
+            _, Lengths = ray.calc_time(self)
+            traveled_dists[idx, :] = Lengths.reshape(-1, )
+        self.traveled_dists = traveled_dists
+
+        return traveled_dists
+
+    def calc_rho(self, _field, _dx=None, _dy=None): # calculate roughness
+        if _dx is None:
+            _dx = self.cell_width
+        if _dy is None:
+            _dy = self.cell_height
+        rho_x = (_field[:, :-2] - 2 * _field[:, 1:-1] + _field[:, 2:]) ** 2
+        rho_y = (_field[:-2, :] - 2 * _field[1:-1, :] + _field[2:, :]) ** 2
+        rho = np.sum(rho_x) / _dx ** 2 + np.sum(rho_y) / _dy ** 2
+        return rho
+
+    def calculate_optimal_metrics(self):
+        self.update_traveled_dists(self.rays, len(self.rays))
+
+        R = self.traveled_dists
+        # condition reciprocal
+        _, S, _ = svd(R)
+        s1 = np.amax(S)
+        sR = np.amin(S[S > 1e-16])
+        K = sR/s1
+
+        # rank
+        rank = np.linalg.matrix_rank(R)
+
+        # stable rank
+        s_rank = np.sum(S**2) / s1**2
+
+        # entropic rank
+        P = S / np.sum(np.abs(S))
+        p = np.pow(P, -P)
+        e_rank = np.prod(p)
+
+        # resolution
+        curlR = np.linalg.pinv(R) @ R
+        D = norm(np.diag(curlR))**2 / norm(curlR, ord='fro')
+
+        # column-coherence
+        alpha = 0
+        N = R.shape[1]
+        for i_idx in range(R.shape[1]):
+            rho_i = R[:, i_idx].reshape(-1, 1)
+            for j_idx in range(i_idx, R.shape[1]):
+                rho_j = R[:, j_idx].reshape(-1, 1)
+                alpha_ij = (rho_i.T @ rho_j / (norm(rho_i) * norm(rho_j) + 1e-16)).item()
+                alpha_ij = 2 / (N*(N-1)) * alpha_ij
+                # print(alpha_ij)
+                alpha += alpha_ij
+
+        # row-coherence
+        A = 0
+        M = R.shape[0]
+        for i_idx in range(R.shape[0]):
+            rho_i = R[i_idx, :].reshape(-1, 1)
+            for j_idx in range(i_idx, R.shape[0]):
+                rho_j = R[j_idx, :].reshape(-1, 1)
+                a_ij = (rho_i.T @ rho_j / (norm(rho_i) * norm(rho_j) + 1e-16)).item()
+                A_ij = 2 / (M*(M-1)) * a_ij * (-np.e*np.log(a_ij + 1e-16))
+                A += A_ij
+
+        metrics = {'rcond': K,
+                   'rank': rank,
+                   's_rank': s_rank,
+                   'e_rank': e_rank,
+                   'resolution': D,
+                   'c_coherence': alpha,
+                   'r_coherence': A}
+        return metrics
 
 
 class EstEnvironment(Environment):
@@ -229,6 +344,7 @@ class EstEnvironment(Environment):
         self.blur_mtx = self.generate_blur(sigma=0.00)
         self.est_time_mse = []
         self.est_ssf_rms = []
+        self.est_rho_rms = []
         self.params = None
 
 
@@ -307,18 +423,6 @@ class EstEnvironment(Environment):
 
         return None
 
-    def update_traveled_dists(self, rays, n_rays):
-        # Updates traveled distances matrix (R)
-        num_cells = self.cells_n
-        traveled_dists = np.zeros([n_rays, num_cells])
-        for idx, ray in enumerate(rays):
-            ray.calc_path(self)
-            _, Lengths = ray.calc_time(self)
-            traveled_dists[idx, :] = Lengths.reshape(-1, )
-        self.traveled_dists = traveled_dists
-
-        return traveled_dists
-
     def update_field(self, z):
         z[z <= 0] = np.median(z[z > 0])
         self.slowness_vector = z
@@ -358,7 +462,6 @@ class EstEnvironment(Environment):
             s0 = pinv(_R) @ _obs_times
             _z = (np.eye(_D.shape[0]) - _V2 @ pinv(_D @ _V2) @ _D) @ s0
             return _z
-
 
 
         def iterate_field_trade(_obs_times, _model_slowness, _alpha, _beta, _masking_depth):
@@ -426,46 +529,47 @@ class EstEnvironment(Environment):
             _z = 1/_velocity_field
             return _z
 
-        def iterate_field_eof_r1(_obs_times, _alpha, _dir_eof_file, _nx, _nz):
+        def iterate_field_eof_r1(_obs_times, _alpha, _dir_eof_file):
+            _nx = self.cells_nx
+            _nz = self.cells_ny
             _R = self.traveled_dists
             _R, _facR = normalize(_R)
             with open(_dir_eof_file, 'rb') as f:
                 _data = pickle.load(f)
-                _mean_vector = _data['mean_vector']
-                _corr_matrix = _data['corr_matrix']
-                _eof_matrix = _data['eof_matrix']
+                _mean_vector = _data['mean']
+                _eof_matrix = _data['eigenbase']
+                # _corr_matrix = _data['corr_matrix']
             _n_eigenvectors = _eof_matrix.shape[1]
-            _R_hat = np.zeros([_R.shape[0], _n_eigenvectors*_nx])
-            for b_idx in range(_nx):
-                _R_hat[:, _n_eigenvectors*b_idx:_n_eigenvectors*(b_idx+1)] = _R[:, b_idx*_nz:(b_idx+1)*_nz] @ _eof_matrix
+            _G = _eof_matrix.shape[1]
+            _eof_matrix_kp = np.kron(_eof_matrix, np.eye(_nx))
+            _mean_vector_ssf = np.concatenate(_nx*[_mean_vector.reshape(-1, 1)], axis=1).reshape(-1, 1)
             _n_alpha = alpha_rp(_alpha)
-            _coef_vector = inv(_R_hat.T @ _R_hat + _n_alpha**2 * np.eye(_n_eigenvectors)) @ _R_hat.T @ (_obs_times - _R @ _mean_vector)
-            _z = np.zeros_like(_mean_vector)
-            for b_idx in range(_nx):
-                _z[b_idx*_nz:(b_idx+1)*_nz] = _eof_matrix @ _coef_vector[_n_eigenvectors*b_idx:_n_eigenvectors*(b_idx+1)]
+            _V = _eof_matrix_kp
+            _kernel = _V.T @ _R.T @ _R @ _V + _n_alpha**2 * np.eye(_G*_nx)
+            _ikernel = inv(_kernel)
+            _a = _ikernel @ _V.T @ _R.T @ ( (1/_facR) * _obs_times - _R @ _mean_vector_ssf)
+            _z = _mean_vector_ssf + _V @ _a
             return _z
 
-        def iterate_field_eof_r2(_obs_times, _alpha, _dir_eof_file, _nx, _nz):
+        def iterate_field_eof_r2(_obs_times, _alpha, _dir_eof_file):
+            _nx = self.cells_nx
+            _nz = self.cells_ny
             _R = self.traveled_dists
             _R, _facR = normalize(_R)
             _D = self.laplacian_mtx
             _D, _FacD = normalize(_D)
             with open(_dir_eof_file, 'rb') as f:
                 _data = pickle.load(f)
-                _mean_vector = _data['mean_vector']
-                _corr_matrix = _data['corr_matrix']
-                _eof_matrix = _data['eof_matrix']
-            _n_eigenvectors = _eof_matrix.shape[1]
-            _R_hat = np.zeros([_R.shape[0], _n_eigenvectors*_nx])
-            _D_hat = np.zeros([_mean_vector.size, _n_eigenvectors*_nx])
-            for b_idx in range(_nx):
-                _R_hat[:, _n_eigenvectors*b_idx:_n_eigenvectors*(b_idx+1)] = _R[:, b_idx*_nz:(b_idx+1)*_nz] @ _eof_matrix
-                _D_hat[:, _n_eigenvectors*b_idx:_n_eigenvectors*(b_idx+1)] = _D[:, b_idx*_nz:(b_idx+1)*_nz] @ _eof_matrix
+                _mean_vector = _data['mean']
+                _eof_matrix = _data['eigenbase']
+                # _corr_matrix = _data['corr_matrix']
+            _V = np.kron(_eof_matrix, np.eye(_nx))
+            _s = np.concatenate(_nx * [_mean_vector.reshape(-1, 1)], axis=1).reshape(-1, 1)
             _n_alpha = alpha_rp(_alpha)
-            _coef_vector = inv(_R_hat.T @ _R_hat + _n_alpha**2 * _D_hat.T @ _D_hat) @ _R_hat.T @ (_obs_times - _R @ _mean_vector)
-            _z = np.zeros_like(_mean_vector)
-            for b_idx in range(_nx):
-                _z[b_idx*_nz:(b_idx+1)*_nz] = _eof_matrix @ _coef_vector[_n_eigenvectors*b_idx:_n_eigenvectors*(b_idx+1)]
+            _kernel = _V.T @ (_R.T @ _R + _n_alpha**2 * _D.T @ _D) @ _V
+            _ikernel = inv(_kernel)
+            _a = _ikernel @ _V.T @ ( _R.T @ ((1 / _facR) * _obs_times - _R @ _s)  - _n_alpha**2 * _D.T @ _D @ _s)
+            _z = _s + _V @ _a
             return _z
 
         rays = self.rays
@@ -485,6 +589,16 @@ class EstEnvironment(Environment):
                 z = iterate_field_split(obs_times, model_slowness, self.params.alpha, self.params.masking_depth)
             case 'munk' | 'param' | 'parameterized':
                 z = iterate_field_param(obs_times, self.params.alpha)
+            case 'svd':
+                z = iterate_field_svd(obs_times, self.params.alpha)
+            case 'eof1':
+                z = iterate_field_eof_r1(obs_times, self.params.alpha, 'midput/slowness_field_eofs.dat')
+            case 'eof2':
+                z = iterate_field_eof_r2(obs_times, self.params.alpha, 'midput/slowness_field_eofs.dat')
+            case 'mean':
+                with open('midput/slowness_field_eofs.dat', 'rb') as f:
+                    data = pickle.load(f)
+                z = np.concatenate(self.cells_nx*[data['mean'].reshape(-1, 1)], axis=1).reshape(-1, 1)
             case _:
                 raise NotImplementedError("The iteration mode {} is not implemented.".format(mode))
 
@@ -502,35 +616,52 @@ class EstEnvironment(Environment):
         # Gradient of cost function
         return self.traveled_dists.T @ (self.traveled_dists @ self.slowness_vector - t)
 
-    def calc_metrics(self, t, s):
+    def calc_metrics(self, times, field):
         # Calculates metrics
         # TODO: Implement other metrics maybe?
-        self.est_time_mse.append(1000 * self.cost_function(self.rays, t))
-        self.est_ssf_rms.append(rms(self.field - s))
+        self.est_time_mse.append(1000 * np.sqrt(1/len(times) * self.cost_function(self.rays, times)))
+        self.est_ssf_rms.append(rms(self.field - field))
+        self.est_rho_rms.append(self.calc_rho(self.field))
 
     def export_metrics(self, direc='Results/', code=''):
         # Exports metrics as .csv file
         est_time_txt = ['x,y']
         est_ssf_txt = ['x,y']
+        est_rho_txt = ['x,y']
+        time_vs_ssf_txt = ['x,y']
 
         for idx in range(len(self.est_time_mse)):
             iteration = idx + 1
             est_time = self.est_time_mse[idx]
             est_ssf = self.est_ssf_rms[idx]
+            est_rho = self.est_rho_rms[idx]
+
             est_time_txt.append('{},{:.8f}'.format(iteration, est_time))
             est_ssf_txt.append('{},{:.4f}'.format(iteration, est_ssf))
+            est_rho_txt.append('{},{:.4f}'.format(iteration, est_rho))
+            time_vs_ssf_txt.append('{:.8f},{:.4f}'.format(est_time,est_ssf))
 
         est_time_txt = '\n'.join(est_time_txt)
         est_ssf_txt = '\n'.join(est_ssf_txt)
+        est_rho_txt = '\n'.join(est_rho_txt)
+        time_vs_ssf_txt = '\n'.join(time_vs_ssf_txt)
 
         est_time_filename = code + '/' + 'metric_time_' + self.field_name.lower()
         est_ssf_filename = code + '/' + 'metric_ssf_' + self.field_name.lower()
+        est_rho_filename = code + '/' + 'metric_rho_' + self.field_name.lower()
+        time_vs_ssf_filename = code + '/' + 'metric_time_vs_ssf_' + self.field_name.lower()
 
         with open(direc + est_time_filename + '.csv', 'w') as f:
             f.write(est_time_txt)
             f.close()
         with open(direc + est_ssf_filename + '.csv', 'w') as f:
             f.write(est_ssf_txt)
+            f.close()
+        # with open(direc + est_rho_filename + '.csv', 'w') as f:
+        #     f.write(est_rho_txt)
+        #     f.close()
+        with open(direc + time_vs_ssf_filename + '.csv', 'w') as f:
+            f.write(time_vs_ssf_txt)
             f.close()
 
 
@@ -550,8 +681,8 @@ class EstEnvironment(Environment):
 #         return vY
 
     def format_params(self):
-        rounded = lambda x, v: '{:.1e}'.format(x) if isinstance(x, (int, float))\
-            else tuple(['{:.1e}'.format(x_) for x_ in x]) if isinstance(x, (tuple, list))\
+        rounded = lambda x, v: '{:.{}e}'.format(x, v) if isinstance(x, (int, float))\
+            else tuple(['{:.{}e}'.format(x_, v) for x_ in x]) if isinstance(x, (tuple, list))\
             else '' if x is None\
             else str(x)
         param_formatted = '  |  '.join(['{}:{}'.format(param_name, rounded(getattr(self.params, param_name), 3)).ljust(32) for param_name in
@@ -649,7 +780,7 @@ def parameterized_munk_profile(vector_beta, range_y):
     return vY
 
 
-def parameterized_optimize(vector_beta, x_vec, y_vec, obs_times, mat_distances, norm_refs=(1500, 0.00737, 1300, 1300),
+def parameterized_optimize(vector_beta, x_vec, y_vec, obs_times, mat_distances, norm_refs=(1500, 0.00737, 1400, 1300),
                            norm_alphas=(0, 0, 0), mode='global'):
     nx = int(vector_beta.size / 4)
     max_iterations = 100
@@ -725,7 +856,7 @@ def parameterized_optimize(vector_beta, x_vec, y_vec, obs_times, mat_distances, 
         new_velocity_field = parameterized_munk_profile(new_vector_beta, y_vec)
         vector_beta = new_vector_beta
         reduced_vector_beta = vector_beta[::nx]
-        print(np.around(reduced_vector_beta.reshape(-1,), decimals=10), )
+        # print(np.around(reduced_vector_beta.reshape(-1,), decimals=10), )
         prev_velocity_field = velocity_field
         velocity_field = new_velocity_field
         register_velocity_fields.append(velocity_field)

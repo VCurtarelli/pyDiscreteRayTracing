@@ -36,3 +36,6 @@ v1.2.260325
 	File and function removal and refactoring.
 v1.2.260416
 	Cara, eu perdi a conta de tudo que eu mudei.
+v1.2.260516
+	Mais condições de simulação.
+	Utilizando dados do WOA para velocidade.
