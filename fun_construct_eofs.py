@@ -40,7 +40,8 @@ def calculate_eofs(profiles, threshold=0.995, return_all=False):
 
 def main():
     threshold = 0.9995
-    with open('input/select_block_velocity_field.dat', 'rb') as f:
+    namefile = 'ssf---36.375---38.375--100m--4900m'
+    with open('input/' + namefile + '.dat', 'rb') as f:
         data = pkl.load(f)
         velocity_profiles = data['velocity']
         depths = data['depth']
@@ -71,7 +72,7 @@ def main():
             'eigenvectors': eigenvectors,
             'eigenvalues': eigenvalues,}
 
-    with open('midput/slowness_field_eofs.dat', 'wb') as f:
+    with open('midput/' + namefile + '--eofs.dat', 'wb') as f:
         pkl.dump(data, f)
     plt.show()
 

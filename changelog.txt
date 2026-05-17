@@ -39,3 +39,6 @@ v1.2.260416
 v1.2.260516
 	Mais condições de simulação.
 	Utilizando dados do WOA para velocidade.
+	Preparações para simulações profundas (até 5000m):
+		- Feitas as modificações necessárias;
+		- Precisa agora rodar os códigos.

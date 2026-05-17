@@ -85,15 +85,23 @@ class Environment:
             case 'wilson':
                 velocity_field = wilson_profile(temperature_field, salinity_field, depth_field, amp=0)
             case 'import':
-                with open('input/select_block_velocity_field.dat', 'rb') as f:
+                with open('input/ssf---36.375---50.375--50m--1500m.dat', 'rb') as f:
                     data = pkl.load(f)
                     velocity_field = np.array(data['velocity_yearly'])
                     depth = data['depth']
+            case 'import-deep':
+                with open('input/ssf---36.375---38.375--100m--4900m.dat', 'rb') as f:
+                    data = pkl.load(f)
+                    velocity_field = np.array(data['velocity'])
+                    depth = data['depth']
             case _:
                 raise NotImplementedError("Needs to implement other types of field")
-
-        with open('midput/slowness_field_eofs.dat', 'rb') as f:
-            data = pkl.load(f)
+        if mode == 'import':
+            with open('midput/ssf---36.375---50.375--50m--1500m--eofs.dat', 'rb') as f:
+                data = pkl.load(f)
+        if mode == 'import-deep':
+            with open('midput/ssf---36.375---38.375--100m--4900m--eofs.dat', 'rb') as f:
+                data = pkl.load(f)
         mean_slowness = data['mean']
         mean_velocity = 1/mean_slowness
         mean_velocity = np.concatenate(self.cells_nx*[mean_velocity.reshape(-1, 1)], axis=1)
@@ -331,9 +339,9 @@ class Environment:
 
 
 class EstEnvironment(Environment):
-    def __init__(self, num_cells_x, num_cells_y, width, height, rays, initial_value=1100, field_name='Estimate'):
+    def __init__(self, num_cells_x, num_cells_y, width, height, rays, initial_value=1100, field_name='Estimate', mode=None):
         # Initiate superclass
-        super().__init__(num_cells_x, num_cells_y, width, height, rays)
+        super().__init__(num_cells_x, num_cells_y, width, height, rays, mode=mode)
         self.field_name = field_name
 
         # Update field to be uniform, generate laplacian (D) and blur (B) matrices

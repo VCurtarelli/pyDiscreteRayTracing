@@ -20,7 +20,7 @@ decimal.getcontext().prec = 2
 
 rms = lambda x: np.sqrt(np.mean(x**2))
 getdatetime = lambda: str(datetime.datetime.now().strftime('%y%m%d-%Hh%Mm%Ss'))
-def simulation_loop(env_params, dev_positioning, method_params, sigma=0.0, show_path=False, name=None):
+def simulation_loop(env_params, dev_positioning, method_params, sigma=0.0, show_path=False, name=None, env_mode=None):
 
     ## Extract parameters from input
     num_cells_x = env_params.num_cells_x
@@ -33,7 +33,7 @@ def simulation_loop(env_params, dev_positioning, method_params, sigma=0.0, show_
     pos_receivers = list(set(zip(pos_receivers_x, pos_receivers_y)))
     pos_sources = list(set(zip(pos_sources_x, pos_sources_y)))
 
-    est_envs, obs_env = generate_environments(height, num_cells_x, num_cells_y, pos_receivers, pos_sources, width, method_params.keys())
+    est_envs, obs_env = generate_environments(height, num_cells_x, num_cells_y, pos_receivers, pos_sources, width, method_params.keys(), env_mode)
     model_slowness = 1/obs_env.vy.reshape(-1, 1)
     obs_times, n_rays = generate_observed_times(obs_env, sigma)
 
@@ -112,14 +112,18 @@ def optimal_metrics(env_params, dev_positioning):
 
 
 def generate_environments(height, num_cells_x, num_cells_y, pos_receivers: list[tuple[Any, Any]],
-                          pos_sources: list[tuple[Any, Any]], width: int, env_names: list[str]) -> tuple[list[EstEnvironment], Environment]:
-    obs_env = Environment(num_cells_x, num_cells_y, width, height)
+                          pos_sources: list[tuple[Any, Any]], width: int, env_names: list[str],
+                          env_mode: str) -> tuple[list[EstEnvironment], Environment]:
+
+    if env_mode is None:
+        env_mode = 'import'
+    obs_env = Environment(num_cells_x, num_cells_y, width, height, mode=env_mode)
     obs_env.generate_rays(pos_sources, pos_receivers)
     # obs_env.plot_curves()
 
     est_envs = []
     for field_name in env_names:
-        est_env = EstEnvironment(num_cells_x, num_cells_y, width, height, None, field_name=field_name)
+        est_env = EstEnvironment(num_cells_x, num_cells_y, width, height, None, field_name=field_name, mode=env_mode)
         est_env.generate_rays(pos_sources, pos_receivers)
         est_envs.append(est_env)
     return est_envs, obs_env
@@ -329,6 +333,7 @@ class MethodParameters:
 
 def get_simulation_mode(simulation_mode, environment_parameters, device_parameters, env_mode):
     masking_depth = 0
+
     match simulation_mode:
 
         case 'sweep':
@@ -362,7 +367,7 @@ def get_simulation_mode(simulation_mode, environment_parameters, device_paramete
             }
             device_pos_modes = ['surround']
             env_mode = 'import'
-            environment_parameters = EnvParameters(num_cells_x=9, num_cells_y=29, width=2000, height=1500)
+            environment_parameters = EnvParameters(num_cells_x=9, num_cells_y=31, width=2000, height=1500)
         case 'optimal-import_bas-vs-svd_layer':
             p_bas = [MethodParameters(alpha=9.900e-01)]
             p_svd = [MethodParameters(alpha=6.735e-01)]
@@ -372,7 +377,7 @@ def get_simulation_mode(simulation_mode, environment_parameters, device_paramete
             }
             device_pos_modes = ['layer/layer']
             env_mode = 'import'
-            environment_parameters = EnvParameters(num_cells_x=9, num_cells_y=29, width=2000, height=1500)
+            environment_parameters = EnvParameters(num_cells_x=9, num_cells_y=31, width=2000, height=1500)
 
         case 'search-import_metrics_layer':
             p_bas = [MethodParameters(alpha=alpha1) for alpha1 in np.linspace(0.3, 0.99, 50)]
@@ -383,7 +388,7 @@ def get_simulation_mode(simulation_mode, environment_parameters, device_paramete
             }
             device_pos_modes = ['layer/layer']
             env_mode = 'import'
-            environment_parameters = EnvParameters(num_cells_x=9, num_cells_y=29, width=2000, height=1500)
+            environment_parameters = EnvParameters(num_cells_x=9, num_cells_y=31, width=2000, height=1500)
             device_parameters = DeviceParameters(n_sources=9, n_receivers=9, n_travels=1, offset=0)
         case 'search-import_metrics_surround':
             p_bas = [MethodParameters(alpha=alpha1) for alpha1 in np.linspace(0.3, 0.99, 50)]
@@ -394,7 +399,7 @@ def get_simulation_mode(simulation_mode, environment_parameters, device_paramete
             }
             device_pos_modes = ['surround']
             env_mode = 'import'
-            environment_parameters = EnvParameters(num_cells_x=9, num_cells_y=29, width=2000, height=1500)
+            environment_parameters = EnvParameters(num_cells_x=9, num_cells_y=31, width=2000, height=1500)
             device_parameters = DeviceParameters(n_sources=9, n_receivers=9, n_travels=1, offset=0)
         case 'search-import_metrics_layer-blob':
             p_bas = [MethodParameters(alpha=alpha1) for alpha1 in np.linspace(0.9, 0.9999, 50)]
@@ -405,7 +410,7 @@ def get_simulation_mode(simulation_mode, environment_parameters, device_paramete
             }
             device_pos_modes = ['layer/blob']
             env_mode = 'import'
-            environment_parameters = EnvParameters(num_cells_x=9, num_cells_y=29, width=2000, height=1500)
+            environment_parameters = EnvParameters(num_cells_x=9, num_cells_y=31, width=2000, height=1500)
             device_parameters = DeviceParameters(n_sources=9, n_receivers=9, n_travels=3, offset=0)
         case 'search-import_metrics_layer-column':
             p_bas = [MethodParameters(alpha=alpha1) for alpha1 in np.linspace(0.9, 0.9999, 50)]
@@ -416,7 +421,7 @@ def get_simulation_mode(simulation_mode, environment_parameters, device_paramete
             }
             device_pos_modes = ['layer/layer+column']
             env_mode = 'import'
-            environment_parameters = EnvParameters(num_cells_x=9, num_cells_y=29, width=2000, height=1500)
+            environment_parameters = EnvParameters(num_cells_x=9, num_cells_y=31, width=2000, height=1500)
             device_parameters = DeviceParameters(n_sources=9, n_receivers=9, n_travels=1, offset=0)
         case 'search-import_metrics_layer-diag':
             p_bas = [MethodParameters(alpha=alpha1) for alpha1 in np.linspace(0.3, 0.9999, 50)]
@@ -427,7 +432,7 @@ def get_simulation_mode(simulation_mode, environment_parameters, device_paramete
             }
             device_pos_modes = ['layer/layer+diagonal']
             env_mode = 'import'
-            environment_parameters = EnvParameters(num_cells_x=9, num_cells_y=29, width=2000, height=1500)
+            environment_parameters = EnvParameters(num_cells_x=9, num_cells_y=31, width=2000, height=1500)
             device_parameters = DeviceParameters(n_sources=9, n_receivers=9, n_travels=1, offset=0)
 
         case 'optimal-import_metrics_layer':
@@ -439,7 +444,7 @@ def get_simulation_mode(simulation_mode, environment_parameters, device_paramete
             }
             device_pos_modes = ['layer/layer']
             env_mode = 'import'
-            environment_parameters = EnvParameters(num_cells_x=9, num_cells_y=29, width=2000, height=1500)
+            environment_parameters = EnvParameters(num_cells_x=9, num_cells_y=31, width=2000, height=1500)
             device_parameters = DeviceParameters(n_sources=9, n_receivers=9, n_travels=1, offset=0)
         case 'optimal-import_metrics_surround':
             p_bas = [MethodParameters(alpha=9.618e-01)]
@@ -450,7 +455,7 @@ def get_simulation_mode(simulation_mode, environment_parameters, device_paramete
             }
             device_pos_modes = ['surround']
             env_mode = 'import'
-            environment_parameters = EnvParameters(num_cells_x=9, num_cells_y=29, width=2000, height=1500)
+            environment_parameters = EnvParameters(num_cells_x=9, num_cells_y=31, width=2000, height=1500)
             device_parameters = DeviceParameters(n_sources=9, n_receivers=9, n_travels=1, offset=0)
         case 'optimal-import_metrics_layer-blob':
             p_bas = [MethodParameters(alpha=9.991e-01)]
@@ -461,7 +466,7 @@ def get_simulation_mode(simulation_mode, environment_parameters, device_paramete
             }
             device_pos_modes = ['layer/blob']
             env_mode = 'import'
-            environment_parameters = EnvParameters(num_cells_x=9, num_cells_y=29, width=2000, height=1500)
+            environment_parameters = EnvParameters(num_cells_x=9, num_cells_y=31, width=2000, height=1500)
             device_parameters = DeviceParameters(n_sources=9, n_receivers=9, n_travels=3, offset=0)
         case 'optimal-import_metrics_layer-column':
             p_bas = [MethodParameters(alpha=9.856e-01)]
@@ -472,7 +477,7 @@ def get_simulation_mode(simulation_mode, environment_parameters, device_paramete
             }
             device_pos_modes = ['layer/layer+column']
             env_mode = 'import'
-            environment_parameters = EnvParameters(num_cells_x=9, num_cells_y=29, width=2000, height=1500)
+            environment_parameters = EnvParameters(num_cells_x=9, num_cells_y=31, width=2000, height=1500)
             device_parameters = DeviceParameters(n_sources=9, n_receivers=9, n_travels=1, offset=0)
         case 'optimal-import_metrics_layer-diag':
             p_bas = [MethodParameters(alpha=9.999e-01)]
@@ -483,7 +488,7 @@ def get_simulation_mode(simulation_mode, environment_parameters, device_paramete
             }
             device_pos_modes = ['layer/layer+diagonal']
             env_mode = 'import'
-            environment_parameters = EnvParameters(num_cells_x=9, num_cells_y=29, width=2000, height=1500)
+            environment_parameters = EnvParameters(num_cells_x=9, num_cells_y=31, width=2000, height=1500)
             device_parameters = DeviceParameters(n_sources=9, n_receivers=9, n_travels=1, offset=0)
 
         case 'optimal-import_sweep_surround':
@@ -506,7 +511,7 @@ def get_simulation_mode(simulation_mode, environment_parameters, device_paramete
             }
             device_pos_modes = ['surround']
             env_mode = 'import'
-            environment_parameters = EnvParameters(num_cells_x=9, num_cells_y=29, width=2000, height=1500)
+            environment_parameters = EnvParameters(num_cells_x=9, num_cells_y=31, width=2000, height=1500)
             device_parameters = DeviceParameters(n_sources=9, n_receivers=9, n_travels=1, offset=0)
         case 'optimal-import_sweep_layer':
             p_bas = [MethodParameters(alpha=9.900e-01)]
@@ -528,7 +533,7 @@ def get_simulation_mode(simulation_mode, environment_parameters, device_paramete
             }
             device_pos_modes = ['layer/layer']
             env_mode = 'import'
-            environment_parameters = EnvParameters(num_cells_x=9, num_cells_y=29, width=2000, height=1500)
+            environment_parameters = EnvParameters(num_cells_x=9, num_cells_y=31, width=2000, height=1500)
             device_parameters = DeviceParameters(n_sources=9, n_receivers=9, n_travels=1, offset=0)
 
         case 'search-import_sweep_surround':
@@ -558,7 +563,7 @@ def get_simulation_mode(simulation_mode, environment_parameters, device_paramete
             }
             device_pos_modes = ['surround']
             env_mode = 'import'
-            environment_parameters = EnvParameters(num_cells_x=9, num_cells_y=29, width=2000, height=1500)
+            environment_parameters = EnvParameters(num_cells_x=9, num_cells_y=31, width=2000, height=1500)
             device_parameters = DeviceParameters(n_sources=9, n_receivers=9, n_travels=1, offset=0)
         case 'search-import_sweep_layer':
             p_bas = [MethodParameters(alpha=alpha1) for alpha1 in np.linspace(0.3, 0.99, 50)]
@@ -587,7 +592,7 @@ def get_simulation_mode(simulation_mode, environment_parameters, device_paramete
             }
             device_pos_modes = ['layer/layer']
             env_mode = 'import'
-            environment_parameters = EnvParameters(num_cells_x=9, num_cells_y=29, width=2000, height=1500)
+            environment_parameters = EnvParameters(num_cells_x=9, num_cells_y=31, width=2000, height=1500)
             device_parameters = DeviceParameters(n_sources=9, n_receivers=9, n_travels=1, offset=0)
 
         case 'search_bas-vs-svd_layer':
@@ -608,7 +613,7 @@ def get_simulation_mode(simulation_mode, environment_parameters, device_paramete
             }
             device_pos_modes = ['layer/layer']
             env_mode = 'import'
-            environment_parameters = EnvParameters(num_cells_x=9, num_cells_y=29, width=2000, height=1500)
+            environment_parameters = EnvParameters(num_cells_x=9, num_cells_y=31, width=2000, height=1500)
             device_parameters = DeviceParameters(n_sources=9, n_receivers=9, n_travels=1, offset=0)
         case 'search-import_petro_surround':
             p_bas = [MethodParameters(alpha=alpha1) for alpha1 in np.linspace(0.3, 0.99, 50)]
@@ -619,7 +624,7 @@ def get_simulation_mode(simulation_mode, environment_parameters, device_paramete
             }
             device_pos_modes = ['surround']
             env_mode = 'import'
-            environment_parameters = EnvParameters(num_cells_x=9, num_cells_y=29, width=2000, height=1500)
+            environment_parameters = EnvParameters(num_cells_x=9, num_cells_y=31, width=2000, height=1500)
             device_parameters = DeviceParameters(n_sources=9, n_receivers=9, n_travels=1, offset=0)
         case 'search-import_petro_layer|blob':
             p_bas = [MethodParameters(alpha=alpha1) for alpha1 in np.linspace(0.3, 0.99, 50)]
@@ -630,7 +635,7 @@ def get_simulation_mode(simulation_mode, environment_parameters, device_paramete
             }
             device_pos_modes = ['layer/blob']
             env_mode = 'import'
-            environment_parameters = EnvParameters(num_cells_x=9, num_cells_y=29, width=2000, height=1500)
+            environment_parameters = EnvParameters(num_cells_x=9, num_cells_y=31, width=2000, height=1500)
             device_parameters = DeviceParameters(n_sources=9, n_receivers=9, n_travels=3, offset=0)
         case 'search-import_petro_layer|layer-column':
             p_bas = [MethodParameters(alpha=alpha1) for alpha1 in np.linspace(0.3, 0.99, 50)]
@@ -641,7 +646,7 @@ def get_simulation_mode(simulation_mode, environment_parameters, device_paramete
             }
             device_pos_modes = ['layer/layer+column']
             env_mode = 'import'
-            environment_parameters = EnvParameters(num_cells_x=9, num_cells_y=29, width=2000, height=1500)
+            environment_parameters = EnvParameters(num_cells_x=9, num_cells_y=31, width=2000, height=1500)
             device_parameters = DeviceParameters(n_sources=9, n_receivers=9, n_travels=1, offset=0)
         case 'search-import_petro_layer|layer-diag':
             p_bas = [MethodParameters(alpha=alpha1) for alpha1 in np.linspace(0.3, 0.99, 50)]
@@ -652,7 +657,7 @@ def get_simulation_mode(simulation_mode, environment_parameters, device_paramete
             }
             device_pos_modes = ['layer/layer+diagonal']
             env_mode = 'import'
-            environment_parameters = EnvParameters(num_cells_x=9, num_cells_y=29, width=2000, height=1500)
+            environment_parameters = EnvParameters(num_cells_x=9, num_cells_y=31, width=2000, height=1500)
             device_parameters = DeviceParameters(n_sources=9, n_receivers=9, n_travels=1, offset=0)
         case 'search-import_petro_layer|layer-scolumn':
             p_bas = [MethodParameters(alpha=alpha1) for alpha1 in np.linspace(0.3, 0.99, 50)]
@@ -663,7 +668,7 @@ def get_simulation_mode(simulation_mode, environment_parameters, device_paramete
             }
             device_pos_modes = ['layer/layer+short-column']
             env_mode = 'import'
-            environment_parameters = EnvParameters(num_cells_x=9, num_cells_y=29, width=2000, height=1500)
+            environment_parameters = EnvParameters(num_cells_x=9, num_cells_y=31, width=2000, height=1500)
             device_parameters = DeviceParameters(n_sources=9, n_receivers=9, n_travels=1, offset=0)
         case 'search-import_petro_layer-scolumn|layer':
             p_bas = [MethodParameters(alpha=alpha1) for alpha1 in np.linspace(0.3, 0.99, 50)]
@@ -674,7 +679,7 @@ def get_simulation_mode(simulation_mode, environment_parameters, device_paramete
             }
             device_pos_modes = ['layer+short-column/layer']
             env_mode = 'import'
-            environment_parameters = EnvParameters(num_cells_x=9, num_cells_y=29, width=2000, height=1500)
+            environment_parameters = EnvParameters(num_cells_x=9, num_cells_y=31, width=2000, height=1500)
             device_parameters = DeviceParameters(n_sources=9, n_receivers=9, n_travels=1, offset=0)
         case 'search-import_petro_semi-surround':
             p_bas = [MethodParameters(alpha=alpha1) for alpha1 in np.linspace(0.3, 0.99, 50)]
@@ -685,7 +690,7 @@ def get_simulation_mode(simulation_mode, environment_parameters, device_paramete
             }
             device_pos_modes = ['layer+short-column/layer+short-column']
             env_mode = 'import'
-            environment_parameters = EnvParameters(num_cells_x=9, num_cells_y=29, width=2000, height=1500)
+            environment_parameters = EnvParameters(num_cells_x=9, num_cells_y=31, width=2000, height=1500)
             device_parameters = DeviceParameters(n_sources=9, n_receivers=9, n_travels=1, offset=0)
         case 'search-import_petro_layer|bracket':
             p_bas = [MethodParameters(alpha=alpha1) for alpha1 in np.linspace(0.3, 0.99, 50)]
@@ -696,7 +701,7 @@ def get_simulation_mode(simulation_mode, environment_parameters, device_paramete
             }
             device_pos_modes = ['layer/bracket']
             env_mode = 'import'
-            environment_parameters = EnvParameters(num_cells_x=9, num_cells_y=29, width=2000, height=1500)
+            environment_parameters = EnvParameters(num_cells_x=9, num_cells_y=31, width=2000, height=1500)
             device_parameters = DeviceParameters(n_sources=9, n_receivers=9, n_travels=1, offset=0)
         case 'search-import_petro_layer|cap':
             p_bas = [MethodParameters(alpha=alpha1) for alpha1 in np.linspace(0.3, 0.99, 50)]
@@ -707,232 +712,563 @@ def get_simulation_mode(simulation_mode, environment_parameters, device_paramete
             }
             device_pos_modes = ['layer/cap']
             env_mode = 'import'
-            environment_parameters = EnvParameters(num_cells_x=9, num_cells_y=29, width=2000, height=1500)
+            environment_parameters = EnvParameters(num_cells_x=9, num_cells_y=31, width=2000, height=1500)
             device_parameters = DeviceParameters(n_sources=9, n_receivers=9, n_travels=1, offset=0)
 
         case 'optimal-import_petro_layer':
             p_bas = [MethodParameters(alpha=9.900e-01)]
-            p_svd = [MethodParameters(alpha=6.735e-01)]
+            p_svd = [MethodParameters(alpha=6.204e-01)]
             methods_parameters = {
                 'classic': p_bas,
                 'svd': p_svd
             }
             device_pos_modes = ['layer/layer']
             env_mode = 'import'
-            environment_parameters = EnvParameters(num_cells_x=9, num_cells_y=29, width=2000, height=1500)
+            environment_parameters = EnvParameters(num_cells_x=9, num_cells_y=31, width=2000, height=1500)
             device_parameters = DeviceParameters(n_sources=9, n_receivers=9, n_travels=1, offset=0)
         case 'optimal-import_petro_surround':
-            p_bas = [MethodParameters(alpha=9.618e-01)]
-            p_svd = [MethodParameters(alpha=3.684e-01)]
-            methods_parameters = {
-                'classic': p_bas,
-                'svd': p_svd
-            }
-            device_pos_modes = ['surround']
-            env_mode = 'import'
-            environment_parameters = EnvParameters(num_cells_x=9, num_cells_y=29, width=2000, height=1500)
-            device_parameters = DeviceParameters(n_sources=9, n_receivers=9, n_travels=1, offset=0)
-        case 'optimal-import_petro_layer|blob':
-            p_bas = [MethodParameters(alpha=3.422e-01)]
+            p_bas = [MethodParameters(alpha=9.759e-01)]
             p_svd = [MethodParameters(alpha=3.286e-01)]
             methods_parameters = {
                 'classic': p_bas,
                 'svd': p_svd
             }
+            device_pos_modes = ['surround']
+            env_mode = 'import'
+            environment_parameters = EnvParameters(num_cells_x=9, num_cells_y=31, width=2000, height=1500)
+            device_parameters = DeviceParameters(n_sources=9, n_receivers=9, n_travels=1, offset=0)
+        case 'optimal-import_petro_layer|blob':
+            p_bas = [MethodParameters(alpha=9.900e-01)]
+            p_svd = [MethodParameters(alpha=7.000e-01)]
+            methods_parameters = {
+                'classic': p_bas,
+                'svd': p_svd
+            }
             device_pos_modes = ['layer/blob']
             env_mode = 'import'
-            environment_parameters = EnvParameters(num_cells_x=9, num_cells_y=29, width=2000, height=1500)
+            environment_parameters = EnvParameters(num_cells_x=9, num_cells_y=31, width=2000, height=1500)
             device_parameters = DeviceParameters(n_sources=9, n_receivers=9, n_travels=3, offset=0)
         case 'optimal-import_petro_layer|layer-column':
-            p_bas = [MethodParameters(alpha=9.900e-01)]
-            p_svd = [MethodParameters(alpha=2.357e-01)]
+            p_bas = [MethodParameters(alpha=9.478e-01)]
+            p_svd = [MethodParameters(alpha=5.408e-01)]
             methods_parameters = {
                 'classic': p_bas,
                 'svd': p_svd
             }
             device_pos_modes = ['layer/layer+column']
             env_mode = 'import'
-            environment_parameters = EnvParameters(num_cells_x=9, num_cells_y=29, width=2000, height=1500)
+            environment_parameters = EnvParameters(num_cells_x=9, num_cells_y=31, width=2000, height=1500)
             device_parameters = DeviceParameters(n_sources=9, n_receivers=9, n_travels=1, offset=0)
         case 'optimal-import_petro_layer|layer-diag':
-            p_bas = [MethodParameters(alpha=7.647e-01)]
-            p_svd = [MethodParameters(alpha=4.480e-01)]
+            p_bas = [MethodParameters(alpha=4.127e-01)]
+            p_svd = [MethodParameters(alpha=5.673e-01)]
             methods_parameters = {
                 'classic': p_bas,
                 'svd': p_svd
             }
             device_pos_modes = ['layer/layer+diagonal']
             env_mode = 'import'
-            environment_parameters = EnvParameters(num_cells_x=9, num_cells_y=29, width=2000, height=1500)
+            environment_parameters = EnvParameters(num_cells_x=9, num_cells_y=31, width=2000, height=1500)
             device_parameters = DeviceParameters(n_sources=9, n_receivers=9, n_travels=1, offset=0)
         case 'optimal-import_petro_layer|layer-scolumn':
             p_bas = [MethodParameters(alpha=9.900e-01)]
-            p_svd = [MethodParameters(alpha=3.418e-01)]
+            p_svd = [MethodParameters(alpha=3.684e-01)]
             methods_parameters = {
                 'classic': p_bas,
                 'svd': p_svd
             }
             device_pos_modes = ['layer/layer+short-column']
             env_mode = 'import'
-            environment_parameters = EnvParameters(num_cells_x=9, num_cells_y=29, width=2000, height=1500)
+            environment_parameters = EnvParameters(num_cells_x=9, num_cells_y=31, width=2000, height=1500)
             device_parameters = DeviceParameters(n_sources=9, n_receivers=9, n_travels=1, offset=0)
         case 'optimal-import_petro_layer-scolumn|layer':
-            p_bas = [MethodParameters(alpha=9.055e-01)]
-            p_svd = [MethodParameters(alpha=1.959e-01)]
+            p_bas = [MethodParameters(alpha=9.759e-01)]
+            p_svd = [MethodParameters(alpha=2.224e-01)]
             methods_parameters = {
                 'classic': p_bas,
                 'svd': p_svd
             }
             device_pos_modes = ['layer+short-column/layer']
             env_mode = 'import'
-            environment_parameters = EnvParameters(num_cells_x=9, num_cells_y=29, width=2000, height=1500)
+            environment_parameters = EnvParameters(num_cells_x=9, num_cells_y=31, width=2000, height=1500)
             device_parameters = DeviceParameters(n_sources=9, n_receivers=9, n_travels=1, offset=0)
         case 'optimal-import_petro_semi-surround':
-            p_bas = [MethodParameters(alpha=9.618e-01)]
-            p_svd = [MethodParameters(alpha=2.490e-01)]
+            p_bas = [MethodParameters(alpha=9.759e-01)]
+            p_svd = [MethodParameters(alpha=3.153e-01)]
             methods_parameters = {
                 'classic': p_bas,
                 'svd': p_svd
             }
             device_pos_modes = ['layer+short-column/layer+short-column']
             env_mode = 'import'
-            environment_parameters = EnvParameters(num_cells_x=9, num_cells_y=29, width=2000, height=1500)
+            environment_parameters = EnvParameters(num_cells_x=9, num_cells_y=31, width=2000, height=1500)
             device_parameters = DeviceParameters(n_sources=9, n_receivers=9, n_travels=1, offset=0)
         case 'optimal-import_petro_layer|bracket':
-            p_bas = [MethodParameters(alpha=4.971e-01)]
-            p_svd = [MethodParameters(alpha=4.745e-01)]
+            p_bas = [MethodParameters(alpha=8.069e-01)]
+            p_svd = [MethodParameters(alpha=5.010e-01)]
             methods_parameters = {
                 'classic': p_bas,
                 'svd': p_svd
             }
             device_pos_modes = ['layer/bracket']
             env_mode = 'import'
-            environment_parameters = EnvParameters(num_cells_x=9, num_cells_y=29, width=2000, height=1500)
+            environment_parameters = EnvParameters(num_cells_x=9, num_cells_y=31, width=2000, height=1500)
             device_parameters = DeviceParameters(n_sources=9, n_receivers=9, n_travels=1, offset=0)
         case 'optimal-import_petro_layer|cap':
             p_bas = [MethodParameters(alpha=9.900e-01)]
-            p_svd = [MethodParameters(alpha=3.551e-01)]
+            p_svd = [MethodParameters(alpha=3.153e-01)]
             methods_parameters = {
                 'classic': p_bas,
                 'svd': p_svd
             }
             device_pos_modes = ['layer/cap']
             env_mode = 'import'
-            environment_parameters = EnvParameters(num_cells_x=9, num_cells_y=29, width=2000, height=1500)
+            environment_parameters = EnvParameters(num_cells_x=9, num_cells_y=31, width=2000, height=1500)
             device_parameters = DeviceParameters(n_sources=9, n_receivers=9, n_travels=1, offset=0)
 
-
         case 'meanpar-import_petro_layer':
-            p_bas = [MethodParameters(alpha=8.393e-01)]
-            p_svd = [MethodParameters(alpha=3.671e-01)]
+            p_bas = [MethodParameters(alpha=9.055e-01)]
+            p_svd = [MethodParameters(alpha=4.479e-01)]
             methods_parameters = {
                 'classic': p_bas,
                 'svd': p_svd
             }
             device_pos_modes = ['layer/layer']
             env_mode = 'import'
-            environment_parameters = EnvParameters(num_cells_x=9, num_cells_y=29, width=2000, height=1500)
+            environment_parameters = EnvParameters(num_cells_x=9, num_cells_y=31, width=2000, height=1500)
             device_parameters = DeviceParameters(n_sources=9, n_receivers=9, n_travels=1, offset=0)
         case 'meanpar-import_petro_surround':
-            p_bas = [MethodParameters(alpha=8.393e-01)]
-            p_svd = [MethodParameters(alpha=3.671e-01)]
+            p_bas = [MethodParameters(alpha=9.055e-01)]
+            p_svd = [MethodParameters(alpha=4.479e-01)]
             methods_parameters = {
                 'classic': p_bas,
                 'svd': p_svd
             }
             device_pos_modes = ['surround']
             env_mode = 'import'
-            environment_parameters = EnvParameters(num_cells_x=9, num_cells_y=29, width=2000, height=1500)
+            environment_parameters = EnvParameters(num_cells_x=9, num_cells_y=31, width=2000, height=1500)
             device_parameters = DeviceParameters(n_sources=9, n_receivers=9, n_travels=1, offset=0)
         case 'meanpar-import_petro_layer|blob':
-            p_bas = [MethodParameters(alpha=8.393e-01)]
-            p_svd = [MethodParameters(alpha=3.671e-01)]
+            p_bas = [MethodParameters(alpha=9.055e-01)]
+            p_svd = [MethodParameters(alpha=4.479e-01)]
             methods_parameters = {
                 'classic': p_bas,
                 'svd': p_svd
             }
             device_pos_modes = ['layer/blob']
             env_mode = 'import'
-            environment_parameters = EnvParameters(num_cells_x=9, num_cells_y=29, width=2000, height=1500)
+            environment_parameters = EnvParameters(num_cells_x=9, num_cells_y=31, width=2000, height=1500)
             device_parameters = DeviceParameters(n_sources=9, n_receivers=9, n_travels=3, offset=0)
         case 'meanpar-import_petro_layer|layer-column':
-            p_bas = [MethodParameters(alpha=8.393e-01)]
-            p_svd = [MethodParameters(alpha=3.671e-01)]
+            p_bas = [MethodParameters(alpha=9.055e-01)]
+            p_svd = [MethodParameters(alpha=4.479e-01)]
             methods_parameters = {
                 'classic': p_bas,
                 'svd': p_svd
             }
             device_pos_modes = ['layer/layer+column']
             env_mode = 'import'
-            environment_parameters = EnvParameters(num_cells_x=9, num_cells_y=29, width=2000, height=1500)
+            environment_parameters = EnvParameters(num_cells_x=9, num_cells_y=31, width=2000, height=1500)
             device_parameters = DeviceParameters(n_sources=9, n_receivers=9, n_travels=1, offset=0)
         case 'meanpar-import_petro_layer|layer-diag':
-            p_bas = [MethodParameters(alpha=8.393e-01)]
-            p_svd = [MethodParameters(alpha=3.671e-01)]
+            p_bas = [MethodParameters(alpha=9.055e-01)]
+            p_svd = [MethodParameters(alpha=4.479e-01)]
             methods_parameters = {
                 'classic': p_bas,
                 'svd': p_svd
             }
             device_pos_modes = ['layer/layer+diagonal']
             env_mode = 'import'
-            environment_parameters = EnvParameters(num_cells_x=9, num_cells_y=29, width=2000, height=1500)
+            environment_parameters = EnvParameters(num_cells_x=9, num_cells_y=31, width=2000, height=1500)
             device_parameters = DeviceParameters(n_sources=9, n_receivers=9, n_travels=1, offset=0)
         case 'meanpar-import_petro_layer|layer-scolumn':
-            p_bas = [MethodParameters(alpha=8.393e-01)]
-            p_svd = [MethodParameters(alpha=3.671e-01)]
+            p_bas = [MethodParameters(alpha=9.055e-01)]
+            p_svd = [MethodParameters(alpha=4.479e-01)]
             methods_parameters = {
                 'classic': p_bas,
                 'svd': p_svd
             }
             device_pos_modes = ['layer/layer+short-column']
             env_mode = 'import'
-            environment_parameters = EnvParameters(num_cells_x=9, num_cells_y=29, width=2000, height=1500)
+            environment_parameters = EnvParameters(num_cells_x=9, num_cells_y=31, width=2000, height=1500)
             device_parameters = DeviceParameters(n_sources=9, n_receivers=9, n_travels=1, offset=0)
         case 'meanpar-import_petro_layer-scolumn|layer':
-            p_bas = [MethodParameters(alpha=8.393e-01)]
-            p_svd = [MethodParameters(alpha=3.671e-01)]
+            p_bas = [MethodParameters(alpha=9.055e-01)]
+            p_svd = [MethodParameters(alpha=4.479e-01)]
             methods_parameters = {
                 'classic': p_bas,
                 'svd': p_svd
             }
             device_pos_modes = ['layer+short-column/layer']
             env_mode = 'import'
-            environment_parameters = EnvParameters(num_cells_x=9, num_cells_y=29, width=2000, height=1500)
+            environment_parameters = EnvParameters(num_cells_x=9, num_cells_y=31, width=2000, height=1500)
             device_parameters = DeviceParameters(n_sources=9, n_receivers=9, n_travels=1, offset=0)
         case 'meanpar-import_petro_semi-surround':
-            p_bas = [MethodParameters(alpha=8.393e-01)]
-            p_svd = [MethodParameters(alpha=3.671e-01)]
+            p_bas = [MethodParameters(alpha=9.055e-01)]
+            p_svd = [MethodParameters(alpha=4.479e-01)]
             methods_parameters = {
                 'classic': p_bas,
                 'svd': p_svd
             }
             device_pos_modes = ['layer+short-column/layer+short-column']
             env_mode = 'import'
-            environment_parameters = EnvParameters(num_cells_x=9, num_cells_y=29, width=2000, height=1500)
+            environment_parameters = EnvParameters(num_cells_x=9, num_cells_y=31, width=2000, height=1500)
             device_parameters = DeviceParameters(n_sources=9, n_receivers=9, n_travels=1, offset=0)
         case 'meanpar-import_petro_layer|bracket':
-            p_bas = [MethodParameters(alpha=8.393e-01)]
-            p_svd = [MethodParameters(alpha=3.671e-01)]
+            p_bas = [MethodParameters(alpha=9.055e-01)]
+            p_svd = [MethodParameters(alpha=4.479e-01)]
             methods_parameters = {
                 'classic': p_bas,
                 'svd': p_svd
             }
             device_pos_modes = ['layer/bracket']
             env_mode = 'import'
-            environment_parameters = EnvParameters(num_cells_x=9, num_cells_y=29, width=2000, height=1500)
+            environment_parameters = EnvParameters(num_cells_x=9, num_cells_y=31, width=2000, height=1500)
             device_parameters = DeviceParameters(n_sources=9, n_receivers=9, n_travels=1, offset=0)
         case 'meanpar-import_petro_layer|cap':
-            p_bas = [MethodParameters(alpha=8.393e-01)]
-            p_svd = [MethodParameters(alpha=3.671e-01)]
+            p_bas = [MethodParameters(alpha=9.055e-01)]
+            p_svd = [MethodParameters(alpha=4.479e-01)]
             methods_parameters = {
                 'classic': p_bas,
                 'svd': p_svd
             }
             device_pos_modes = ['layer/cap']
             env_mode = 'import'
-            environment_parameters = EnvParameters(num_cells_x=9, num_cells_y=29, width=2000, height=1500)
+            environment_parameters = EnvParameters(num_cells_x=9, num_cells_y=31, width=2000, height=1500)
             device_parameters = DeviceParameters(n_sources=9, n_receivers=9, n_travels=1, offset=0)
 
+        case 'search-import-deep_petro_layer':
+            p_bas = [MethodParameters(alpha=alpha1) for alpha1 in np.linspace(0.3, 0.99, 50)]
+            p_svd = [MethodParameters(alpha=alpha1) for alpha1 in np.linspace(0.05, 0.7, 50)]
+            methods_parameters = {
+                'classic': p_bas,
+                'svd': p_svd
+            }
+            device_pos_modes = ['layer/layer']
+            env_mode = 'import-deep'
+            environment_parameters = EnvParameters(num_cells_x=9, num_cells_y=50, width=2000, height=5000)
+            device_parameters = DeviceParameters(n_sources=9, n_receivers=9, n_travels=1, offset=0)
+        case 'search-import-deep_petro_surround':
+            p_bas = [MethodParameters(alpha=alpha1) for alpha1 in np.linspace(0.3, 0.99, 50)]
+            p_svd = [MethodParameters(alpha=alpha1) for alpha1 in np.linspace(0.05, 0.7, 50)]
+            methods_parameters = {
+                'classic': p_bas,
+                'svd': p_svd
+            }
+            device_pos_modes = ['surround']
+            env_mode = 'import-deep'
+            environment_parameters = EnvParameters(num_cells_x=9, num_cells_y=50, width=2000, height=5000)
+            device_parameters = DeviceParameters(n_sources=9, n_receivers=9, n_travels=1, offset=0)
+        case 'search-import-deep_petro_layer|blob':
+            p_bas = [MethodParameters(alpha=alpha1) for alpha1 in np.linspace(0.3, 0.99, 50)]
+            p_svd = [MethodParameters(alpha=alpha1) for alpha1 in np.linspace(0.05, 0.7, 50)]
+            methods_parameters = {
+                'classic': p_bas,
+                'svd': p_svd
+            }
+            device_pos_modes = ['layer/blob']
+            env_mode = 'import-deep'
+            environment_parameters = EnvParameters(num_cells_x=9, num_cells_y=50, width=2000, height=5000)
+            device_parameters = DeviceParameters(n_sources=9, n_receivers=9, n_travels=3, offset=0)
+        case 'search-import-deep_petro_layer|layer-column':
+            p_bas = [MethodParameters(alpha=alpha1) for alpha1 in np.linspace(0.3, 0.99, 50)]
+            p_svd = [MethodParameters(alpha=alpha1) for alpha1 in np.linspace(0.05, 0.7, 50)]
+            methods_parameters = {
+                'classic': p_bas,
+                'svd': p_svd
+            }
+            device_pos_modes = ['layer/layer+column']
+            env_mode = 'import-deep'
+            environment_parameters = EnvParameters(num_cells_x=9, num_cells_y=50, width=2000, height=5000)
+            device_parameters = DeviceParameters(n_sources=9, n_receivers=9, n_travels=1, offset=0)
+        case 'search-import-deep_petro_layer|layer-diag':
+            p_bas = [MethodParameters(alpha=alpha1) for alpha1 in np.linspace(0.3, 0.99, 50)]
+            p_svd = [MethodParameters(alpha=alpha1) for alpha1 in np.linspace(0.05, 0.7, 50)]
+            methods_parameters = {
+                'classic': p_bas,
+                'svd': p_svd
+            }
+            device_pos_modes = ['layer/layer+diagonal']
+            env_mode = 'import-deep'
+            environment_parameters = EnvParameters(num_cells_x=9, num_cells_y=50, width=2000, height=5000)
+            device_parameters = DeviceParameters(n_sources=9, n_receivers=9, n_travels=1, offset=0)
+        case 'search-import-deep_petro_layer|layer-scolumn':
+            p_bas = [MethodParameters(alpha=alpha1) for alpha1 in np.linspace(0.3, 0.99, 50)]
+            p_svd = [MethodParameters(alpha=alpha1) for alpha1 in np.linspace(0.05, 0.7, 50)]
+            methods_parameters = {
+                'classic': p_bas,
+                'svd': p_svd
+            }
+            device_pos_modes = ['layer/layer+short-column']
+            env_mode = 'import-deep'
+            environment_parameters = EnvParameters(num_cells_x=9, num_cells_y=50, width=2000, height=5000)
+            device_parameters = DeviceParameters(n_sources=9, n_receivers=9, n_travels=1, offset=0)
+        case 'search-import-deep_petro_layer-scolumn|layer':
+            p_bas = [MethodParameters(alpha=alpha1) for alpha1 in np.linspace(0.3, 0.99, 50)]
+            p_svd = [MethodParameters(alpha=alpha1) for alpha1 in np.linspace(0.05, 0.7, 50)]
+            methods_parameters = {
+                'classic': p_bas,
+                'svd': p_svd
+            }
+            device_pos_modes = ['layer+short-column/layer']
+            env_mode = 'import-deep'
+            environment_parameters = EnvParameters(num_cells_x=9, num_cells_y=50, width=2000, height=5000)
+            device_parameters = DeviceParameters(n_sources=9, n_receivers=9, n_travels=1, offset=0)
+        case 'search-import-deep_petro_semi-surround':
+            p_bas = [MethodParameters(alpha=alpha1) for alpha1 in np.linspace(0.3, 0.99, 50)]
+            p_svd = [MethodParameters(alpha=alpha1) for alpha1 in np.linspace(0.05, 0.7, 50)]
+            methods_parameters = {
+                'classic': p_bas,
+                'svd': p_svd
+            }
+            device_pos_modes = ['layer+short-column/layer+short-column']
+            env_mode = 'import-deep'
+            environment_parameters = EnvParameters(num_cells_x=9, num_cells_y=50, width=2000, height=5000)
+            device_parameters = DeviceParameters(n_sources=9, n_receivers=9, n_travels=1, offset=0)
+        case 'search-import-deep_petro_layer|bracket':
+            p_bas = [MethodParameters(alpha=alpha1) for alpha1 in np.linspace(0.3, 0.99, 50)]
+            p_svd = [MethodParameters(alpha=alpha1) for alpha1 in np.linspace(0.05, 0.7, 50)]
+            methods_parameters = {
+                'classic': p_bas,
+                'svd': p_svd
+            }
+            device_pos_modes = ['layer/bracket']
+            env_mode = 'import-deep'
+            environment_parameters = EnvParameters(num_cells_x=9, num_cells_y=50, width=2000, height=5000)
+            device_parameters = DeviceParameters(n_sources=9, n_receivers=9, n_travels=1, offset=0)
+        case 'search-import-deep_petro_layer|cap':
+            p_bas = [MethodParameters(alpha=alpha1) for alpha1 in np.linspace(0.3, 0.99, 50)]
+            p_svd = [MethodParameters(alpha=alpha1) for alpha1 in np.linspace(0.05, 0.7, 50)]
+            methods_parameters = {
+                'classic': p_bas,
+                'svd': p_svd
+            }
+            device_pos_modes = ['layer/cap']
+            env_mode = 'import-deep'
+            environment_parameters = EnvParameters(num_cells_x=9, num_cells_y=50, width=2000, height=5000)
+            device_parameters = DeviceParameters(n_sources=9, n_receivers=9, n_travels=1, offset=0)
+
+        case 'optimal-import-deep_petro_layer':
+            p_bas = [MethodParameters(alpha=9.900e-01)]
+            p_svd = [MethodParameters(alpha=6.204e-01)]
+            methods_parameters = {
+                'classic': p_bas,
+                'svd': p_svd
+            }
+            device_pos_modes = ['layer/layer']
+            env_mode = 'import-deep'
+            environment_parameters = EnvParameters(num_cells_x=9, num_cells_y=50, width=2000, height=5000)
+            device_parameters = DeviceParameters(n_sources=9, n_receivers=9, n_travels=1, offset=0)
+        case 'optimal-import-deep_petro_surround':
+            p_bas = [MethodParameters(alpha=9.759e-01)]
+            p_svd = [MethodParameters(alpha=3.286e-01)]
+            methods_parameters = {
+                'classic': p_bas,
+                'svd': p_svd
+            }
+            device_pos_modes = ['surround']
+            env_mode = 'import-deep'
+            environment_parameters = EnvParameters(num_cells_x=9, num_cells_y=50, width=2000, height=5000)
+            device_parameters = DeviceParameters(n_sources=9, n_receivers=9, n_travels=1, offset=0)
+        case 'optimal-import-deep_petro_layer|blob':
+            p_bas = [MethodParameters(alpha=9.900e-01)]
+            p_svd = [MethodParameters(alpha=7.000e-01)]
+            methods_parameters = {
+                'classic': p_bas,
+                'svd': p_svd
+            }
+            device_pos_modes = ['layer/blob']
+            env_mode = 'import-deep'
+            environment_parameters = EnvParameters(num_cells_x=9, num_cells_y=50, width=2000, height=5000)
+            device_parameters = DeviceParameters(n_sources=9, n_receivers=9, n_travels=3, offset=0)
+        case 'optimal-import-deep_petro_layer|layer-column':
+            p_bas = [MethodParameters(alpha=9.478e-01)]
+            p_svd = [MethodParameters(alpha=5.408e-01)]
+            methods_parameters = {
+                'classic': p_bas,
+                'svd': p_svd
+            }
+            device_pos_modes = ['layer/layer+column']
+            env_mode = 'import-deep'
+            environment_parameters = EnvParameters(num_cells_x=9, num_cells_y=50, width=2000, height=5000)
+            device_parameters = DeviceParameters(n_sources=9, n_receivers=9, n_travels=1, offset=0)
+        case 'optimal-import-deep_petro_layer|layer-diag':
+            p_bas = [MethodParameters(alpha=4.127e-01)]
+            p_svd = [MethodParameters(alpha=5.673e-01)]
+            methods_parameters = {
+                'classic': p_bas,
+                'svd': p_svd
+            }
+            device_pos_modes = ['layer/layer+diagonal']
+            env_mode = 'import-deep'
+            environment_parameters = EnvParameters(num_cells_x=9, num_cells_y=50, width=2000, height=5000)
+            device_parameters = DeviceParameters(n_sources=9, n_receivers=9, n_travels=1, offset=0)
+        case 'optimal-import-deep_petro_layer|layer-scolumn':
+            p_bas = [MethodParameters(alpha=9.900e-01)]
+            p_svd = [MethodParameters(alpha=3.684e-01)]
+            methods_parameters = {
+                'classic': p_bas,
+                'svd': p_svd
+            }
+            device_pos_modes = ['layer/layer+short-column']
+            env_mode = 'import-deep'
+            environment_parameters = EnvParameters(num_cells_x=9, num_cells_y=50, width=2000, height=5000)
+            device_parameters = DeviceParameters(n_sources=9, n_receivers=9, n_travels=1, offset=0)
+        case 'optimal-import-deep_petro_layer-scolumn|layer':
+            p_bas = [MethodParameters(alpha=9.759e-01)]
+            p_svd = [MethodParameters(alpha=2.224e-01)]
+            methods_parameters = {
+                'classic': p_bas,
+                'svd': p_svd
+            }
+            device_pos_modes = ['layer+short-column/layer']
+            env_mode = 'import-deep'
+            environment_parameters = EnvParameters(num_cells_x=9, num_cells_y=50, width=2000, height=5000)
+            device_parameters = DeviceParameters(n_sources=9, n_receivers=9, n_travels=1, offset=0)
+        case 'optimal-import-deep_petro_semi-surround':
+            p_bas = [MethodParameters(alpha=9.759e-01)]
+            p_svd = [MethodParameters(alpha=3.153e-01)]
+            methods_parameters = {
+                'classic': p_bas,
+                'svd': p_svd
+            }
+            device_pos_modes = ['layer+short-column/layer+short-column']
+            env_mode = 'import-deep'
+            environment_parameters = EnvParameters(num_cells_x=9, num_cells_y=50, width=2000, height=5000)
+            device_parameters = DeviceParameters(n_sources=9, n_receivers=9, n_travels=1, offset=0)
+        case 'optimal-import-deep_petro_layer|bracket':
+            p_bas = [MethodParameters(alpha=8.069e-01)]
+            p_svd = [MethodParameters(alpha=5.010e-01)]
+            methods_parameters = {
+                'classic': p_bas,
+                'svd': p_svd
+            }
+            device_pos_modes = ['layer/bracket']
+            env_mode = 'import-deep'
+            environment_parameters = EnvParameters(num_cells_x=9, num_cells_y=50, width=2000, height=5000)
+            device_parameters = DeviceParameters(n_sources=9, n_receivers=9, n_travels=1, offset=0)
+        case 'optimal-import-deep_petro_layer|cap':
+            p_bas = [MethodParameters(alpha=9.900e-01)]
+            p_svd = [MethodParameters(alpha=3.153e-01)]
+            methods_parameters = {
+                'classic': p_bas,
+                'svd': p_svd
+            }
+            device_pos_modes = ['layer/cap']
+            env_mode = 'import-deep'
+            environment_parameters = EnvParameters(num_cells_x=9, num_cells_y=50, width=2000, height=5000)
+            device_parameters = DeviceParameters(n_sources=9, n_receivers=9, n_travels=1, offset=0)
+
+        case 'meanpar-import-deep_petro_layer':
+            p_bas = [MethodParameters(alpha=9.055e-01)]
+            p_svd = [MethodParameters(alpha=4.479e-01)]
+            methods_parameters = {
+                'classic': p_bas,
+                'svd': p_svd
+            }
+            device_pos_modes = ['layer/layer']
+            env_mode = 'import-deep'
+            environment_parameters = EnvParameters(num_cells_x=9, num_cells_y=50, width=2000, height=5000)
+            device_parameters = DeviceParameters(n_sources=9, n_receivers=9, n_travels=1, offset=0)
+        case 'meanpar-import-deep_petro_surround':
+            p_bas = [MethodParameters(alpha=9.055e-01)]
+            p_svd = [MethodParameters(alpha=4.479e-01)]
+            methods_parameters = {
+                'classic': p_bas,
+                'svd': p_svd
+            }
+            device_pos_modes = ['surround']
+            env_mode = 'import-deep'
+            environment_parameters = EnvParameters(num_cells_x=9, num_cells_y=50, width=2000, height=5000)
+            device_parameters = DeviceParameters(n_sources=9, n_receivers=9, n_travels=1, offset=0)
+        case 'meanpar-import-deep_petro_layer|blob':
+            p_bas = [MethodParameters(alpha=9.055e-01)]
+            p_svd = [MethodParameters(alpha=4.479e-01)]
+            methods_parameters = {
+                'classic': p_bas,
+                'svd': p_svd
+            }
+            device_pos_modes = ['layer/blob']
+            env_mode = 'import-deep'
+            environment_parameters = EnvParameters(num_cells_x=9, num_cells_y=50, width=2000, height=5000)
+            device_parameters = DeviceParameters(n_sources=9, n_receivers=9, n_travels=3, offset=0)
+        case 'meanpar-import-deep_petro_layer|layer-column':
+            p_bas = [MethodParameters(alpha=9.055e-01)]
+            p_svd = [MethodParameters(alpha=4.479e-01)]
+            methods_parameters = {
+                'classic': p_bas,
+                'svd': p_svd
+            }
+            device_pos_modes = ['layer/layer+column']
+            env_mode = 'import-deep'
+            environment_parameters = EnvParameters(num_cells_x=9, num_cells_y=50, width=2000, height=5000)
+            device_parameters = DeviceParameters(n_sources=9, n_receivers=9, n_travels=1, offset=0)
+        case 'meanpar-import-deep_petro_layer|layer-diag':
+            p_bas = [MethodParameters(alpha=9.055e-01)]
+            p_svd = [MethodParameters(alpha=4.479e-01)]
+            methods_parameters = {
+                'classic': p_bas,
+                'svd': p_svd
+            }
+            device_pos_modes = ['layer/layer+diagonal']
+            env_mode = 'import-deep'
+            environment_parameters = EnvParameters(num_cells_x=9, num_cells_y=50, width=2000, height=5000)
+            device_parameters = DeviceParameters(n_sources=9, n_receivers=9, n_travels=1, offset=0)
+        case 'meanpar-import-deep_petro_layer|layer-scolumn':
+            p_bas = [MethodParameters(alpha=9.055e-01)]
+            p_svd = [MethodParameters(alpha=4.479e-01)]
+            methods_parameters = {
+                'classic': p_bas,
+                'svd': p_svd
+            }
+            device_pos_modes = ['layer/layer+short-column']
+            env_mode = 'import-deep'
+            environment_parameters = EnvParameters(num_cells_x=9, num_cells_y=50, width=2000, height=5000)
+            device_parameters = DeviceParameters(n_sources=9, n_receivers=9, n_travels=1, offset=0)
+        case 'meanpar-import-deep_petro_layer-scolumn|layer':
+            p_bas = [MethodParameters(alpha=9.055e-01)]
+            p_svd = [MethodParameters(alpha=4.479e-01)]
+            methods_parameters = {
+                'classic': p_bas,
+                'svd': p_svd
+            }
+            device_pos_modes = ['layer+short-column/layer']
+            env_mode = 'import-deep'
+            environment_parameters = EnvParameters(num_cells_x=9, num_cells_y=50, width=2000, height=5000)
+            device_parameters = DeviceParameters(n_sources=9, n_receivers=9, n_travels=1, offset=0)
+        case 'meanpar-import-deep_petro_semi-surround':
+            p_bas = [MethodParameters(alpha=9.055e-01)]
+            p_svd = [MethodParameters(alpha=4.479e-01)]
+            methods_parameters = {
+                'classic': p_bas,
+                'svd': p_svd
+            }
+            device_pos_modes = ['layer+short-column/layer+short-column']
+            env_mode = 'import-deep'
+            environment_parameters = EnvParameters(num_cells_x=9, num_cells_y=50, width=2000, height=5000)
+            device_parameters = DeviceParameters(n_sources=9, n_receivers=9, n_travels=1, offset=0)
+        case 'meanpar-import-deep_petro_layer|bracket':
+            p_bas = [MethodParameters(alpha=9.055e-01)]
+            p_svd = [MethodParameters(alpha=4.479e-01)]
+            methods_parameters = {
+                'classic': p_bas,
+                'svd': p_svd
+            }
+            device_pos_modes = ['layer/bracket']
+            env_mode = 'import-deep'
+            environment_parameters = EnvParameters(num_cells_x=9, num_cells_y=50, width=2000, height=5000)
+            device_parameters = DeviceParameters(n_sources=9, n_receivers=9, n_travels=1, offset=0)
+        case 'meanpar-import-deep_petro_layer|cap':
+            p_bas = [MethodParameters(alpha=9.055e-01)]
+            p_svd = [MethodParameters(alpha=4.479e-01)]
+            methods_parameters = {
+                'classic': p_bas,
+                'svd': p_svd
+            }
+            device_pos_modes = ['layer/cap']
+            env_mode = 'import-deep'
+            environment_parameters = EnvParameters(num_cells_x=9, num_cells_y=50, width=2000, height=5000)
+            device_parameters = DeviceParameters(n_sources=9, n_receivers=9, n_travels=1, offset=0)
 
     return environment_parameters, device_parameters, methods_parameters, device_pos_modes[0], env_mode
 
@@ -951,16 +1287,16 @@ def main():
             environment_parameters = EnvParameters(num_cells_x=43, num_cells_y=50, width=2000, height=2000)
             device_parameters = DeviceParameters(n_sources=15, n_receivers=15, n_travels=3, offset=0)
     device_pos_modes = {
-        'mp1': 'layer/layer',
-        'mp3': 'layer/blob',
-        'mp5': 'layer/layer+diagonal',
-        'mp4': 'layer/layer+column',
-        'mp9': 'layer/bracket',
-        'mp2': 'surround',
-        'mp7': 'layer+short-column/layer',
-        'mp6': 'layer/layer+short-column',
-        'mp8': 'layer+short-column/layer+short-column',
-        'mpA': 'layer/cap',
+        'sd1': 'layer/layer',
+        'sd3': 'layer/blob',
+        'sd5': 'layer/layer+diagonal',
+        'sd4': 'layer/layer+column',
+        'sd9': 'layer/bracket',
+        'sd2': 'surround',
+        'sd7': 'layer+short-column/layer',
+        'sd6': 'layer/layer+short-column',
+        'sd8': 'layer+short-column/layer+short-column',
+        'sdA': 'layer/cap',
     }
     metric_estimation = True
 
@@ -1015,14 +1351,49 @@ def main():
                         'mp8': ['meanpar-import', 'petro', 'semi-surround'],        # mean-parameter - petro - semi-surround
                         'mp9': ['meanpar-import', 'petro', 'layer|bracket'],        # mean-parameter - petro - layer-bracket
                         'mpA': ['meanpar-import', 'petro', 'layer|cap'],            # mean-parameter - petro - layer-cap
+
+                        'sd1': ['search-import-deep', 'petro', 'layer'],                # search - petro - layer
+                        'sd2': ['search-import-deep', 'petro', 'surround'],             # search - petro - surround
+                        'sd3': ['search-import-deep', 'petro', 'layer|blob'],           # search - petro - layer-blob
+                        'sd4': ['search-import-deep', 'petro', 'layer|layer-column'],   # search - petro - layer-column
+                        'sd5': ['search-import-deep', 'petro', 'layer|layer-diag'],     # search - petro - layer-diag
+                        'sd6': ['search-import-deep', 'petro', 'layer|layer-scolumn'],  # search - petro - layer-scolumn
+                        'sd7': ['search-import-deep', 'petro', 'layer-scolumn|layer'],  # search - petro - scolumn-layer
+                        'sd8': ['search-import-deep', 'petro', 'semi-surround'],        # search - petro - semi-surround
+                        'sd9': ['search-import-deep', 'petro', 'layer|bracket'],        # search - petro - layer-bracket
+                        'sdA': ['search-import-deep', 'petro', 'layer|cap'],            # search - petro - layer-cap
+
+                        'od1': ['optimal-import-deep', 'petro', 'layer'],               # optimal - petro - layer
+                        'od2': ['optimal-import-deep', 'petro', 'surround'],            # optimal - petro - surround
+                        'od3': ['optimal-import-deep', 'petro', 'layer|blob'],          # optimal - petro - layer-blob
+                        'od4': ['optimal-import-deep', 'petro', 'layer|layer-column'],  # optimal - petro - layer-column
+                        'od5': ['optimal-import-deep', 'petro', 'layer|layer-diag'],    # optimal - petro - layer-diag
+                        'od6': ['optimal-import-deep', 'petro', 'layer|layer-scolumn'], # optimal - petro - layer-scolumn
+                        'od7': ['optimal-import-deep', 'petro', 'layer-scolumn|layer'], # optimal - petro - scolumn-layer
+                        'od8': ['optimal-import-deep', 'petro', 'semi-surround'],       # optimal - petro - semi-surround
+                        'od9': ['optimal-import-deep', 'petro', 'layer|bracket'],       # optimal - petro - layer-bracket
+                        'odA': ['optimal-import-deep', 'petro', 'layer|cap'],           # optimal - petro - layer-cap
+
+                        'md1': ['meanpar-import-deep', 'petro', 'layer'],               # mean-parameter - petro - layer
+                        'md2': ['meanpar-import-deep', 'petro', 'surround'],            # mean-parameter - petro - surround
+                        'md3': ['meanpar-import-deep', 'petro', 'layer|blob'],          # mean-parameter - petro - layer-blob
+                        'md4': ['meanpar-import-deep', 'petro', 'layer|layer-column'],  # mean-parameter - petro - layer-column
+                        'md5': ['meanpar-import-deep', 'petro', 'layer|layer-diag'],    # mean-parameter - petro - layer-diag
+                        'md6': ['meanpar-import-deep', 'petro', 'layer|layer-scolumn'], # mean-parameter - petro - layer-scolumn
+                        'md7': ['meanpar-import-deep', 'petro', 'layer-scolumn|layer'], # mean-parameter - petro - scolumn-layer
+                        'md8': ['meanpar-import-deep', 'petro', 'semi-surround'],       # mean-parameter - petro - semi-surround
+                        'md9': ['meanpar-import-deep', 'petro', 'layer|bracket'],       # mean-parameter - petro - layer-bracket
+                        'mdA': ['meanpar-import-deep', 'petro', 'layer|cap'],           # mean-parameter - petro - layer-cap
                         }
 
-    # classic_params = [get_simulation_mode('_'.join(simulation_modes[sim_code]), environment_parameters, device_parameters, env_mode)[2]['classic'][0].alpha for sim_code in device_pos_modes.keys()]
-    # svd_params = [get_simulation_mode('_'.join(simulation_modes[sim_code]), environment_parameters, device_parameters, env_mode)[2]['svd'][0].alpha for sim_code in device_pos_modes.keys()]
-    # mean_alpha_1 = np.mean(classic_params[:5])
-    # mean_beta_1 = np.mean(svd_params[:5])
-    # mean_alpha_2 = np.mean(classic_params[5:])
-    # mean_beta_2 = np.mean(svd_params[5:])
+    classic_params = [get_simulation_mode('_'.join(simulation_modes[sim_code]), environment_parameters, device_parameters, env_mode)[2]['classic'][0].alpha for sim_code in device_pos_modes.keys()]
+    svd_params = [get_simulation_mode('_'.join(simulation_modes[sim_code]), environment_parameters, device_parameters, env_mode)[2]['svd'][0].alpha for sim_code in device_pos_modes.keys()]
+    mean_alpha = np.mean(classic_params)  # 9.055e-01
+    mean_beta = np.mean(svd_params)  # 4.479e-01
+    mean_alpha_1 = np.mean(classic_params[:5])
+    mean_beta_1 = np.mean(svd_params[:5])
+    mean_alpha_2 = np.mean(classic_params[5:])
+    mean_beta_2 = np.mean(svd_params[5:])
     # ------
     # Main estimation loop
     ssf_errors = np.zeros([len(device_pos_modes.keys()), 2])
@@ -1040,11 +1411,15 @@ def main():
         np.set_printoptions(legacy='1.25', precision=6, linewidth=320)
         decimal.getcontext().prec = 2
         est_envs = simulation_loop(environment_parameters, device_positioning, methods_parameters, sig, show_path=False,
-                        name='_'.join(simulation_mode_list))
+                        name='_'.join(simulation_mode_list), env_mode=env_mode)
         for env_idx, est_env in enumerate(est_envs):
             ssf_errors[simulation_code_idx, env_idx] = est_env.est_ssf_rms[-1]
 
-    if metric_estimation:
+    if metric_estimation and len(set([tuple(simulation_modes[code][:2]) for code in device_pos_modes.keys()])) == 1:
+        simulation_mode_list = simulation_modes[device_pos_modes.keys()[0]].copy()
+        simulation_mode_list.insert(2, getdatetime())
+        simulation_mode_list[-1] = 'metrics-all'
+        simulation_mode = '_'.join(simulation_mode_list).replace('_', '--').replace(' ', '--').replace('|', ';')
         # ------
         # Calculates optimal metrics
         cross_mode_metrics = np.zeros([len(device_pos_modes.keys()), 7])
