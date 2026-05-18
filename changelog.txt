@@ -44,3 +44,6 @@ v1.2.260516
 		- Precisa agora rodar os códigos.
 v1.2.260517
 	Gerados os parâmetros ótimos para o caso import-deep.
+v1.2.260518
+	Gerados parâmetros ótimos para caso import-deep.
+	Não gerados resultados para meanpar-import-deep.
