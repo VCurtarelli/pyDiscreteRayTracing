@@ -47,3 +47,5 @@ v1.2.260517
 v1.2.260518
 	Gerados parâmetros ótimos para caso import-deep.
 	Não gerados resultados para meanpar-import-deep.
+v1.2.260520
+	Corrigido erro no caso "param".

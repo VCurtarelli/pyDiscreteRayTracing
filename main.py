@@ -492,13 +492,13 @@ def get_simulation_mode(simulation_mode, environment_parameters, device_paramete
             device_parameters = DeviceParameters(n_sources=9, n_receivers=9, n_travels=1, offset=0)
 
         case 'optimal-import_sweep_surround':
-            p_bas = [MethodParameters(alpha=9.618e-01)]
-            p_svd = [MethodParameters(alpha=2.622e-01)]
-            p_trd = [MethodParameters(alpha=9.000e-01, beta=2.000e-01, masking_depth=0)]
+            p_bas = [MethodParameters(alpha=9.759e-01)]
+            p_svd = [MethodParameters(alpha=3.286e-01)]
+            p_trd = [MethodParameters(alpha=9.000e-01, beta=1.000e-01, masking_depth=0)]
             p_spl = [MethodParameters(alpha=9.800e-01, masking_depth=1000)]
-            p_prm = [MethodParameters(alpha=(1.000e-3, 9.000e-1, 1.000e-2, 1.000e-4))]
-            p_eof1 = [MethodParameters(alpha=6.063e-01)]
-            p_eof2 = [MethodParameters(alpha=9.516e-01)]
+            p_prm = [MethodParameters(alpha=(1.000e-04, 9.000e-01, 1.000e-04, 1.000e-01))]
+            p_eof1 = [MethodParameters(alpha=5.535e-01)]
+            p_eof2 = [MethodParameters(alpha=9.618e-01)]
             methods_parameters = {
                 'classic': p_bas,
                 'svd': p_svd,
@@ -515,11 +515,11 @@ def get_simulation_mode(simulation_mode, environment_parameters, device_paramete
             device_parameters = DeviceParameters(n_sources=9, n_receivers=9, n_travels=1, offset=0)
         case 'optimal-import_sweep_layer':
             p_bas = [MethodParameters(alpha=9.900e-01)]
-            p_svd = [MethodParameters(alpha=6.735e-01)]
+            p_svd = [MethodParameters(alpha=6.204e-01)]
             p_trd = [MethodParameters(alpha=9.000e-01, beta=3.000e-01, masking_depth=0)]
             p_spl = [MethodParameters(alpha=9.800e-01, masking_depth=1000)]
-            p_prm = [MethodParameters(alpha=(3.162e-04, 8.000e-01, 1.000e-01, 1.000e-04))]
-            p_eof1 = [MethodParameters(alpha=3.000e-01)]
+            p_prm = [MethodParameters(alpha=(1.000e-04, 6.000e-01, 1.000e-04, 1.000e-04))]
+            p_eof1 = [MethodParameters(alpha=4.971e-01)]
             p_eof2 = [MethodParameters(alpha=9.900e-01)]
             methods_parameters = {
                 'classic': p_bas,
@@ -1287,18 +1287,20 @@ def main():
             environment_parameters = EnvParameters(num_cells_x=43, num_cells_y=50, width=2000, height=2000)
             device_parameters = DeviceParameters(n_sources=15, n_receivers=15, n_travels=3, offset=0)
     device_pos_modes = {
-        'sd1': 'layer/layer',
-        'sd3': 'layer/blob',
-        'sd5': 'layer/layer+diagonal',
-        'sd4': 'layer/layer+column',
-        'sd9': 'layer/bracket',
-        'sd2': 'surround',
-        'sd7': 'layer+short-column/layer',
-        'sd6': 'layer/layer+short-column',
-        'sd8': 'layer+short-column/layer+short-column',
-        'sdA': 'layer/cap',
+        # 'sd1': 'layer/layer',
+        # 'sd3': 'layer/blob',
+        # 'sd5': 'layer/layer+diagonal',
+        # 'sd4': 'layer/layer+column',
+        # 'sd9': 'layer/bracket',
+        # 'sd2': 'surround',
+        # 'sd7': 'layer+short-column/layer',
+        # 'sd6': 'layer/layer+short-column',
+        # 'sd8': 'layer+short-column/layer+short-column',
+        # 'sdA': 'layer/cap',
+        # 'oss': 'surround',
+        'osl': 'layer/layer'
     }
-    metric_estimation = True
+    metric_estimation = False
 
     simulation_modes = {'ops': ['optimal-import', 'bas-vs-svd', 'surround'],    # optimum - paper - surround
                         'opl': ['optimal-import', 'bas-vs-svd', 'layer'],       # optimum - paper - layered
