@@ -49,3 +49,7 @@ v1.2.260518
 	Não gerados resultados para meanpar-import-deep.
 v1.2.260520
 	Corrigido erro no caso "param".
+v1.2.260521
+	Adicionados outros 4 casos.
+v1.2.260525
+	Corrigidos os parâmetros para os novos casos.

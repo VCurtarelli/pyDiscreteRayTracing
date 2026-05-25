@@ -110,7 +110,7 @@ class Environment:
         self.vx = velocity_field - self.vy
         return velocity_field
 
-    def plot_curves(self, rays=None, sources=None, receivers=None,
+    def plot_curves(self, name=None, rays=None, sources=None, receivers=None,
                     ax=None, show_field=None, show_path=False, legend=False, vs=None, cmap=None):
         if rays is None:
             rays = self.rays
@@ -172,6 +172,7 @@ class Environment:
 
         if legend:
             ax.legend(loc='upper left')
+        plt.title(name)
         plt.show()
 
     def field_to_csv(self, idx, direc='Results/', export_params=False, comp=None, vmin=None, vmax=None, code='', mode='xyv'):
