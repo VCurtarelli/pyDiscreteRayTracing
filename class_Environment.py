@@ -226,6 +226,24 @@ class Environment:
                 f.write(txt)
                 f.close()
 
+        elif mode == 'mean':
+            txt = ['y,val']
+            for y_idx in range(self.cells_ny + 1):
+                if y_idx == self.cells_ny:
+                    y_coord = self.height
+                    y_idx -= 1
+                else:
+                    y_coord = grid_y[y_idx]
+                velocity = np.mean(field[y_idx,:])
+                txt.append('{:.4f},{:.4f}'.format(y_coord, velocity))
+            txt = '\n'.join(txt)
+            filename = code + '/' + idx_name + 'mean_profile_' + self.field_name.lower()
+            if comp is not None:
+                filename += '_comp'
+            with open(direc + filename + '.csv', 'w') as f:
+                f.write(txt)
+                f.close()
+
         if export_params:
             filename = code + '/' + 'params'
             if comp is not None:
@@ -648,8 +666,11 @@ class EstEnvironment(Environment):
             est_time_txt.append('{},{:.8f}'.format(iteration, est_time))
             est_ssf_txt.append('{},{:.4f}'.format(iteration, est_ssf))
             est_rho_txt.append('{},{:.4f}'.format(iteration, est_rho))
-            time_vs_ssf_txt.append('{:.8f},{:.4f}'.format(est_time,est_ssf))
+            if idx == len(self.est_time_mse) - 1:  # Remove condition if want to plot evolution of time-vs-ssf error
+                time_vs_ssf_txt.append('{:.8f},{:.4f}'.format(est_time,est_ssf))
 
+        measurements_vs_ssf_txt = 'x,y\n{:.4f},{:.4f}'.format(len(self.sources)*len(self.receivers), self.est_ssf_rms[-1])
+        devices_vs_ssf_txt = 'x,y\n{:.4f},{:.4f}'.format(len(self.sources)+len(self.receivers), self.est_ssf_rms[-1])
         est_time_txt = '\n'.join(est_time_txt)
         est_ssf_txt = '\n'.join(est_ssf_txt)
         est_rho_txt = '\n'.join(est_rho_txt)
@@ -659,6 +680,8 @@ class EstEnvironment(Environment):
         est_ssf_filename = code + '/' + 'metric_ssf_' + self.field_name.lower()
         est_rho_filename = code + '/' + 'metric_rho_' + self.field_name.lower()
         time_vs_ssf_filename = code + '/' + 'metric_time_vs_ssf_' + self.field_name.lower()
+        measurements_vs_ssf_filename = code + '/' + 'metric_msmnts_vs_ssf_' + self.field_name.lower()
+        devices_vs_ssf_filename = code + '/' + 'metric_devices_vs_ssf_' + self.field_name.lower()
 
         with open(direc + est_time_filename + '.csv', 'w') as f:
             f.write(est_time_txt)
@@ -666,28 +689,18 @@ class EstEnvironment(Environment):
         with open(direc + est_ssf_filename + '.csv', 'w') as f:
             f.write(est_ssf_txt)
             f.close()
-        # with open(direc + est_rho_filename + '.csv', 'w') as f:
+        # with open(direc + est_rho_filename + '.csv', 'w') as f:  # Enable block if want roughness metric
         #     f.write(est_rho_txt)
         #     f.close()
         with open(direc + time_vs_ssf_filename + '.csv', 'w') as f:
             f.write(time_vs_ssf_txt)
             f.close()
-
-
-# def mod_munk_profile(e_ref, v_ref, z_ref, height, y_mat, x_mat=None, return_separated=False):
-#     if x_mat is None:
-#         x_mat = np.zeros_like(y_mat)
-#     eta = 2 * (height * y_mat - z_ref) / z_ref
-#     vY = (v_ref * (1-e_ref)
-#           + v_ref * e_ref * eta
-#           + v_ref * e_ref * np.exp(-eta))
-#     if return_separated:
-#         v1 = v_ref * (1-e_ref) * np.ones_like(y_mat)
-#         v2 = v_ref * e_ref * eta
-#         v3 = v_ref * e_ref * np.exp(-eta)
-#         return v1, v2, v3
-#     else:
-#         return vY
+        with open(direc + measurements_vs_ssf_filename + '.csv', 'w') as f:
+            f.write(measurements_vs_ssf_txt)
+            f.close()
+        with open(direc + devices_vs_ssf_filename + '.csv', 'w') as f:
+            f.write(devices_vs_ssf_txt)
+            f.close()
 
     def format_params(self):
         rounded = lambda x, v: '{:.{}e}'.format(x, v) if isinstance(x, (int, float))\

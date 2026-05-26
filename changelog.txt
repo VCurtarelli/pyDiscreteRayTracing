@@ -53,3 +53,5 @@ v1.2.260521
 	Adicionados outros 4 casos.
 v1.2.260525
 	Corrigidos os parâmetros para os novos casos.
+	Alterado esquema de nomenclatura das pastas (para reduzir redundância).
+	Alterações na geração de dados.

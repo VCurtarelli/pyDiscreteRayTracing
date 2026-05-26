@@ -149,6 +149,7 @@ def iteration_loop(code: str, est_envs: list[Any], model_slowness: ndarray,
     ## Export observed environment
     obs_env.field_to_csv(0, export_params=True, code=code)
     obs_env.field_to_csv(0, export_params=True, code=code, mode='yx')
+    obs_env.field_to_csv(0, export_params=True, code=code, mode='mean')
     print('\n' * 10)
     mode_list = list(method_params.keys())
     param_list = [method_params[mode] for mode in mode_list]
@@ -200,10 +201,11 @@ def iteration_loop(code: str, est_envs: list[Any], model_slowness: ndarray,
         out_est_envs.append(best_est_env)
 
     for est_env in out_est_envs:
-        est_env.field_to_csv('fin', code=code)
-        est_env.field_to_csv('fin', comp=obs_env.field, code=code, vmin=-20, vmax=20, export_params=True)
-        est_env.field_to_csv('fin', code=code, mode='yx')
-        est_env.field_to_csv('fin', comp=obs_env.field, code=code, mode='yx')
+        # est_env.field_to_csv('fin', code=code)  # Enable if want to export field
+        # est_env.field_to_csv('fin', comp=obs_env.field, code=code, vmin=-20, vmax=20, export_params=True)  # Enable if want to export comp-field
+        # est_env.field_to_csv('fin', code=code, mode='yx')
+        # est_env.field_to_csv('fin', comp=obs_env.field, code=code, mode='yx')  # Enable if want to export comp-profiles
+        est_env.field_to_csv('fin', code=code, mode='mean')
         est_env.export_metrics(code=code)
     return out_est_envs
 
@@ -1455,21 +1457,69 @@ def main():
             environment_parameters = EnvParameters(num_cells_x=43, num_cells_y=50, width=2000, height=2000)
             device_parameters = DeviceParameters(n_sources=15, n_receivers=15, n_travels=3, offset=0)
     device_pos_modes = {
-        'sdA': 'layer',
-        'sdB': 'layer|blob',
-        'sdC': 'layer|layer+diag',
-        'sdD': 'layer|layer+appendix',
-        'sdE': 'layer|bracket',
-        'sdF': 'layer+column|layer+column',
-        'sdG': 'layer|cap',
-        'sdH': 'layer+column|layer',
-        'sdI': 'layer|layer+column',
+        'opA': 'layer',
+        'opB': 'layer|blob',
+        'opC': 'layer|layer+diag',
+        'opD': 'layer|layer+appendix',
+        'opE': 'layer|bracket',
+        'opF': 'layer+column|layer+column',
+        'opG': 'layer|cap',
+        'opH': 'layer+column|layer',
+        'opI': 'layer|layer+column',
+        'opJ': 'layer+vertical|layer+vertical',
+        'opK': 'layer+vertical|layer',
+        'opL': 'layer|layer+vertical',
+        'opM': 'layer+sparse|layer',
+        'opN': 'layer|layer+sparse',
+        'opO': 'cup|layer',
+
+        'mpA': 'layer',
+        'mpB': 'layer|blob',
+        'mpC': 'layer|layer+diag',
+        'mpD': 'layer|layer+appendix',
+        'mpE': 'layer|bracket',
+        'mpF': 'layer+column|layer+column',
+        'mpG': 'layer|cap',
+        'mpH': 'layer+column|layer',
+        'mpI': 'layer|layer+column',
+        'mpJ': 'layer+vertical|layer+vertical',
+        'mpK': 'layer+vertical|layer',
+        'mpL': 'layer|layer+vertical',
+        'mpM': 'layer+sparse|layer',
+        'mpN': 'layer|layer+sparse',
+        'mpO': 'cup|layer',
+
+        'odA': 'layer',
+        'odB': 'layer|blob',
+        'odC': 'layer|layer+diag',
+        'odD': 'layer|layer+appendix',
+        'odE': 'layer|bracket',
+        'odF': 'layer+column|layer+column',
+        'odG': 'layer|cap',
+        'odH': 'layer+column|layer',
+        'odI': 'layer|layer+column',
         'odJ': 'layer+vertical|layer+vertical',
         'odK': 'layer+vertical|layer',
         'odL': 'layer|layer+vertical',
         'odM': 'layer+sparse|layer',
         'odN': 'layer|layer+sparse',
         'odO': 'cup|layer',
+
+        'mdA': 'layer',
+        'mdB': 'layer|blob',
+        'mdC': 'layer|layer+diag',
+        'mdD': 'layer|layer+appendix',
+        'mdE': 'layer|bracket',
+        'mdF': 'layer+column|layer+column',
+        'mdG': 'layer|cap',
+        'mdH': 'layer+column|layer',
+        'mdI': 'layer|layer+column',
+        'mdJ': 'layer+vertical|layer+vertical',
+        'mdK': 'layer+vertical|layer',
+        'mdL': 'layer|layer+vertical',
+        'mdM': 'layer+sparse|layer',
+        'mdN': 'layer|layer+sparse',
+        'mdO': 'cup|layer',
     }
     metric_estimation = False
 
@@ -1592,7 +1642,8 @@ def main():
     ssf_errors = np.zeros([len(device_pos_modes.keys()), 2])
     for simulation_code_idx, simulation_code in enumerate(device_pos_modes.keys()):
         simulation_mode_list = simulation_modes[simulation_code].copy()
-        simulation_mode_list.insert(2, getdatetime())
+        # simulation_mode_list.insert(2, getdatetime())
+        simulation_mode_list[1] += ('/' + getdatetime())
         simulation_mode = '_'.join(simulation_modes[simulation_code])
 
         environment_parameters, device_parameters, methods_parameters, device_pos_mode, env_mode\

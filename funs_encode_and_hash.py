@@ -53,5 +53,5 @@ def make_folders_and_hash(n_rays: int, parameters: dict, name=None) -> tuple[str
 
     parameters['code'] = code
     parameters['n_rays'] = n_rays
-    export_params(parameters, direc, name, 'simulation parameters')
+    # export_params(parameters, direc, name, 'simulation parameters')
     return code, direc, parameters
